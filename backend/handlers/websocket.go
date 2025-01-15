@@ -2,11 +2,13 @@ package handlers
 
 import (
 	"chat-room/auth"
+	"chat-room/config"
 	"chat-room/models"
 	"log"
 	"net/http"
 	"sync"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/gorilla/websocket"
 	"gorm.io/gorm"
 )
@@ -28,18 +30,16 @@ func NewWebSocketHandler(db *gorm.DB) *WebSocketHandler {
 	return &WebSocketHandler{
 		db: db,
 		upgrader: websocket.Upgrader{
-			CheckOrigin: func(r *http.Request) bool { return true },
+			CheckOrigin: func(r *http.Request) bool {
+				// Allow connections from frontend
+				return r.Header.Get("Origin") == "http://localhost:3000"
+			},
 		},
 	}
 }
 
 func (h *WebSocketHandler) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
-	userID := auth.GetUserIDFromContext(r)
-	if userID == 0 {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-
+	// Upgrade connection first
 	conn, err := h.upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Printf("websocket upgrade error: %v", err)
@@ -47,16 +47,47 @@ func (h *WebSocketHandler) HandleWebSocket(w http.ResponseWriter, r *http.Reques
 	}
 	defer conn.Close()
 
-	h.clients.Store(conn, userID)
+	// Wait for auth message
+	var authMsg struct {
+		Type  string `json:"type"`
+		Token string `json:"token"`
+	}
+	if err := conn.ReadJSON(&authMsg); err != nil {
+		log.Printf("auth message error: %v", err)
+		return
+	}
+
+	if authMsg.Type != "auth" || authMsg.Token == "" {
+		conn.WriteJSON(map[string]string{"error": "unauthorized"})
+		return
+	}
+
+	// Parse and validate token
+	claims := &auth.Claims{}
+	parsedToken, err := jwt.ParseWithClaims(authMsg.Token, claims, func(token *jwt.Token) (interface{}, error) {
+		return []byte(config.GetConfig().JWTSecret), nil
+	})
+
+	if err != nil || !parsedToken.Valid {
+		conn.WriteJSON(map[string]string{"error": "invalid token"})
+		return
+	}
+
+	// Send auth success
+	conn.WriteJSON(map[string]string{"type": "auth_success"})
+
+	// Store connection
+	h.clients.Store(conn, claims.UserID)
 	defer h.clients.Delete(conn)
 
+	// Handle messages
 	for {
 		var msg Message
 		if err := conn.ReadJSON(&msg); err != nil {
 			break
 		}
 
-		msg.UserID = userID
+		msg.UserID = claims.UserID
 		if msg.Type == "message" {
 			if err := h.db.Create(&models.Message{
 				Content:   msg.Content,

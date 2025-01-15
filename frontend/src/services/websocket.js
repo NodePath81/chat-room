@@ -1,37 +1,72 @@
 export class WebSocketService {
-  constructor(url) {
-    this.url = url;
+  constructor() {
     this.ws = null;
+    this.handlers = new Map();
   }
 
-  connect(sessionId, token) {
-    this.ws = new WebSocket(`${this.url}/ws/session/${sessionId}?token=${token}`);
+  connect(sessionId) {
+    const token = localStorage.getItem('token');
+    if (!token) return;
 
-    this.ws.onopen = () => {
-      console.log('Connected to WebSocket');
-    };
+    const wsUrl = `ws://localhost:8080/ws`;
+    
+    try {
+        this.ws = new WebSocket(wsUrl);
+        
+        this.ws.onopen = () => {
+            console.log('Connected to WebSocket');
+            this.ws.send(JSON.stringify({
+                type: 'auth',
+                token: token
+            }));
+        };
 
-    this.ws.onmessage = (event) => {
-      const message = JSON.parse(event.data);
-      console.log('Received message:', message);
-    };
+        this.ws.onclose = () => {
+            console.log('WebSocket connection closed');
+            setTimeout(() => this.connect(sessionId), 2000);
+        };
 
-    this.ws.onclose = () => {
-      console.log('Disconnected from WebSocket');
-    };
+        this.ws.onmessage = (event) => {
+            try {
+                const message = JSON.parse(event.data);
+                if (message.type === 'auth_success') {
+                    console.log('Authenticated successfully');
+                    return;
+                }
+                if (message.error) {
+                    console.error('WebSocket error:', message.error);
+                    return;
+                }
+                if (this.handlers.has('message')) {
+                    this.handlers.get('message')(message);
+                }
+            } catch (e) {
+                console.error('Error parsing message:', e);
+            }
+        };
 
-    this.ws.onerror = (error) => {
-      console.error('WebSocket error:', error);
-    };
-  }
-
-  sendMessage(message) {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify({
-        type: 'message',
-        content: message,
-      }));
+        this.ws.onerror = (error) => {
+            console.error('WebSocket error:', error);
+        };
+    } catch (error) {
+        console.error('Failed to connect:', error);
     }
+  }
+
+  sendMessage(content, sessionId) {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+
+    const message = {
+      type: 'message',
+      content: content,
+      sessionId: sessionId
+    };
+
+    this.ws.send(JSON.stringify(message));
+  }
+
+  onMessage(callback) {
+    this.handlers.set('message', callback);
   }
 
   disconnect() {
@@ -40,4 +75,6 @@ export class WebSocketService {
       this.ws = null;
     }
   }
-} 
+}
+
+export default new WebSocketService(); 

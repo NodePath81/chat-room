@@ -48,6 +48,7 @@ func main() {
 	// Routes
 	r.Post("/api/auth/register", authHandler.Register)
 	r.Post("/api/auth/login", authHandler.Login)
+	r.HandleFunc("/ws", wsHandler.HandleWebSocket)
 
 	// Protected routes
 	r.Group(func(r chi.Router) {
@@ -59,7 +60,6 @@ func main() {
 			r.Get("/{id}", sessionHandler.GetSession)
 		})
 
-		r.HandleFunc("/ws", wsHandler.HandleWebSocket)
 	})
 
 	// Start server

@@ -1,40 +1,53 @@
-import React, { useEffect, useState } from 'react';
-import { Box, VStack } from '@chakra-ui/react';
+import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
-import MessageList from './MessageList';
-import MessageInput from './MessageInput';
-import { WebSocketService } from '../services/websocket';
-import { authService } from '../services/auth';
-
-const ws = new WebSocketService(process.env.REACT_APP_WS_URL || 'ws://localhost:8080');
+import { Box, VStack, Input, Button, Text } from '@chakra-ui/react';
+import WebSocketService from '../services/websocket';
 
 function ChatRoom() {
-  const { sessionId } = useParams();
-  const [messages, setMessages] = useState([]);
+    const { sessionId } = useParams();
+    const [messages, setMessages] = useState([]);
+    const [newMessage, setNewMessage] = useState('');
 
-  useEffect(() => {
-    if (sessionId) {
-      const token = authService.getToken();
-      ws.connect(sessionId, token);
-    }
+    useEffect(() => {
+        WebSocketService.connect(sessionId);
+        WebSocketService.onMessage((message) => {
+            setMessages(prev => [...prev, message]);
+        });
 
-    return () => {
-      ws.disconnect();
+        return () => WebSocketService.disconnect();
+    }, [sessionId]);
+
+    const handleSend = () => {
+        if (newMessage.trim()) {
+            WebSocketService.sendMessage(newMessage, parseInt(sessionId));
+            setNewMessage('');
+        }
     };
-  }, [sessionId]);
 
-  const handleSendMessage = (content) => {
-    ws.sendMessage(content);
-  };
-
-  return (
-    <Box h="100vh" p={4}>
-      <VStack h="full" spacing={4}>
-        <MessageList messages={messages} />
-        <MessageInput onSendMessage={handleSendMessage} />
-      </VStack>
-    </Box>
-  );
+    return (
+        <Box p={4}>
+            <VStack spacing={4} align="stretch" h="80vh">
+                <Box flex={1} overflowY="auto" borderWidth={1} p={4}>
+                    {messages.map((msg, index) => (
+                        <Text key={index}>
+                            {msg.content}
+                        </Text>
+                    ))}
+                </Box>
+                <Box>
+                    <Input
+                        value={newMessage}
+                        onChange={(e) => setNewMessage(e.target.value)}
+                        placeholder="Type a message..."
+                        onKeyPress={(e) => e.key === 'Enter' && handleSend()}
+                    />
+                    <Button onClick={handleSend} ml={2}>
+                        Send
+                    </Button>
+                </Box>
+            </VStack>
+        </Box>
+    );
 }
 
 export default ChatRoom; 
