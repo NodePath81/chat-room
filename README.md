@@ -1,189 +1,134 @@
-# Real-time Chat Room
+I'll create a comprehensive README.md for your chat application:
 
-A real-time chat application built with Go (backend) and React (frontend), featuring WebSocket communication for instant messaging.
+```markdown:README.md
+# Real-time Chat Application
+
+A modern real-time chat application built with Go (backend) and React (frontend), featuring WebSocket communication and JWT authentication.
 
 ## Features
 
-- 🚀 Real-time messaging using WebSocket
+- 🔐 Secure user authentication with JWT
+- 💬 Real-time messaging using WebSocket
 - 👥 Multiple chat rooms support
-- 🔐 User authentication
-- 👤 Online user presence
-- 💾 Message persistence
-- 🔄 Automatic reconnection
-- 📱 Responsive design
+- 🔄 Message history persistence
+- 🚀 Auto-reconnection on connection loss
+- 📱 Responsive UI with Chakra UI
 
 ## Tech Stack
 
 ### Backend
-- Go 1.21+
-- Chi (routing)
-- GORM (database ORM)
+- Go
+- Chi (HTTP router)
+- GORM (ORM)
+- PostgreSQL (Database)
 - Gorilla WebSocket
-- PostgreSQL
+- JWT for authentication
 
 ### Frontend
-- React 18
-- TypeScript
+- React
 - Chakra UI
-- Axios
-- React Router DOM
+- React Router
+- WebSocket API
 
 ## Getting Started
 
 ### Prerequisites
-
-- Go 1.21 or higher
-- Node.js 18 or higher
+- Go 1.19 or higher
+- Node.js 16 or higher
 - PostgreSQL
+- Yarn package manager
 
-### Installation
-
-1. **Clone the repository**
+### Backend Setup
+1. Clone the repository
 ```bash
-git clone https://github.com/yourusername/chat-room
-cd chat-room
+git clone <repository-url>
+cd wschat
 ```
 
-2. **Set up the backend**
+2. Set up the database
+```bash
+# Create a PostgreSQL database named 'chat'
+createdb chat
+```
+
+3. Configure environment variables
+```bash
+# Create .env file in backend directory
+cp backend/.env.example backend/.env
+# Edit the .env file with your database credentials
+```
+
+4. Run the backend
 ```bash
 cd backend
-
-# Install dependencies
-go mod tidy
-
-# Create .env file
-cp .env.example .env
-
-# Update database configuration in .env
-# Start the server
+go mod download
 go run main.go
 ```
 
-3. **Set up the frontend**
+### Frontend Setup
+1. Install dependencies
 ```bash
 cd frontend
-
-# Install dependencies
-npm install
-
-# Start the development server
-npm start
+yarn install
 ```
 
-### Environment Variables
-
-#### Backend (.env)
-```env
-PORT=8080
-DB_HOST=localhost
-DB_PORT=5432
-DB_USER=postgres
-DB_PASSWORD=your_password
-DB_NAME=chatroom
-JWT_SECRET=your_secret_key
-```
-
-#### Frontend (.env)
-```env
-REACT_APP_API_URL=http://localhost:8080
-REACT_APP_WS_URL=ws://localhost:8080
+2. Start the development server
+```bash
+yarn start
 ```
 
 ## API Endpoints
 
 ### Authentication
-- `POST /api/auth/register` - Register new user
-- `POST /api/auth/login` - Login user
+- `POST /api/auth/register` - Register a new user
+- `POST /api/auth/login` - Login and get JWT token
 
-### Sessions
-- `GET /api/sessions` - List all sessions
-- `POST /api/sessions` - Create new session
+### Sessions (Protected Routes)
+- `GET /api/sessions` - Get all chat sessions
+- `POST /api/sessions` - Create a new chat session
 - `GET /api/sessions/{id}` - Get session details
-- `POST /api/sessions/{id}/join` - Join a session
-- `DELETE /api/sessions/{id}/leave` - Leave a session
+- `POST /api/sessions/{id}/join` - Join a chat session
+- `GET /api/sessions/{id}/check` - Check session membership
 
 ### WebSocket
-- `WS /ws/session/{sessionId}` - WebSocket endpoint for chat sessions
+- `WS /ws` - WebSocket endpoint for real-time chat
+  - Requires authentication token
+  - Requires session ID as query parameter
 
 ## Project Structure
 
+### Backend
 ```
-chat-app/
-├── backend/
-│   ├── main.go
-│   ├── handlers/
-│   │   ├── websocket.go
-│   │   ├── session.go
-│   │   └── auth.go
-│   ├── models/
-│   │   ├── user.go
-│   │   ├── session.go
-│   │   └── message.go
-│   ├── database/
-│   │   └── db.go
-│   └── config/
-│       └── config.go
-└── frontend/
-    ├── src/
-    │   ├── components/
-    │   │   ├── ChatRoom.tsx
-    │   │   ├── MessageList.tsx
-    │   │   ├── MessageInput.tsx
-    │   │   └── UserList.tsx
-    │   ├── services/
-    │   │   └── websocket.ts
-    │   └── App.tsx
-    └── package.json
+backend/
+├── auth/         # Authentication related code
+├── config/       # Configuration management
+├── database/     # Database setup and migrations
+├── handlers/     # HTTP and WebSocket handlers
+├── middleware/   # Custom middlewares
+├── models/       # Database models
+└── main.go       # Application entry point
 ```
 
-## Usage
-
-1. Register a new account or login
-2. Create a new chat room or join an existing one
-3. Start chatting in real-time with other users
-
-## WebSocket Message Format
-
-```typescript
-interface Message {
-    type: 'message' | 'user_joined' | 'user_left';
-    sessionId: string;
-    content?: string;
-    user?: {
-        id: number;
-        username: string;
-    };
-    timestamp: string;
-}
+### Frontend
+```
+frontend/
+├── public/
+├── src/
+│   ├── components/   # React components
+│   ├── services/     # API and WebSocket services
+│   ├── App.js        # Main application component
+│   └── index.js      # Entry point
+└── package.json
 ```
 
 ## Contributing
 
 1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add some amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details
-
-## Acknowledgments
-
-- [Chi](https://github.com/go-chi/chi)
-- [GORM](https://gorm.io)
-- [Gorilla WebSocket](https://github.com/gorilla/websocket)
-- [React](https://reactjs.org)
-- [Chakra UI](https://chakra-ui.com)
-```
-
-This README.md provides:
-- Clear installation instructions
-- Project structure
-- API endpoints
-- Environment setup
-- Tech stack details
-- Usage instructions
-- Contributing guidelines
-
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
