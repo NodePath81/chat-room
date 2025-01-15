@@ -17,13 +17,19 @@ type Config struct {
 	Port       string
 }
 
+var globalConfig *Config
+
+func GetConfig() *Config {
+	return globalConfig
+}
+
 func LoadConfig() (*Config, error) {
 	err := godotenv.Load()
 	if err != nil {
 		return nil, fmt.Errorf("error loading .env file: %w", err)
 	}
 
-	config := &Config{
+	globalConfig = &Config{
 		DBHost:     getEnv("DB_HOST", "localhost"),
 		DBPort:     getEnv("DB_PORT", "5432"),
 		DBUser:     getEnv("DB_USER", "postgres"),
@@ -33,7 +39,7 @@ func LoadConfig() (*Config, error) {
 		Port:       getEnv("PORT", "8080"),
 	}
 
-	return config, nil
+	return globalConfig, nil
 }
 
 func getEnv(key, defaultValue string) string {
@@ -42,4 +48,9 @@ func getEnv(key, defaultValue string) string {
 		return defaultValue
 	}
 	return value
-} 
+}
+
+// Add this function for testing
+func SetConfig(cfg *Config) {
+	globalConfig = cfg
+}

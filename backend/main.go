@@ -7,6 +7,7 @@ import (
 	"chat-room/config"
 	"chat-room/database"
 	"chat-room/handlers"
+	custommw "chat-room/middleware"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -46,14 +47,20 @@ func main() {
 
 	// Routes
 	r.Post("/api/auth/register", authHandler.Register)
+	r.Post("/api/auth/login", authHandler.Login)
 
-	r.Route("/api/sessions", func(r chi.Router) {
-		r.Get("/", sessionHandler.GetSessions)
-		r.Post("/", sessionHandler.CreateSession)
-		r.Get("/{id}", sessionHandler.GetSession)
+	// Protected routes
+	r.Group(func(r chi.Router) {
+		r.Use(custommw.AuthMiddleware)
+
+		r.Route("/api/sessions", func(r chi.Router) {
+			r.Get("/", sessionHandler.GetSessions)
+			r.Post("/", sessionHandler.CreateSession)
+			r.Get("/{id}", sessionHandler.GetSession)
+		})
+
+		r.HandleFunc("/ws", wsHandler.HandleWebSocket)
 	})
-
-	r.HandleFunc("/ws", wsHandler.HandleWebSocket)
 
 	// Start server
 	port := cfg.Port

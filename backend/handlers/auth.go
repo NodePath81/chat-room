@@ -2,11 +2,13 @@ package handlers
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
+	"time"
 
+	"chat-room/config"
 	"chat-room/models"
 
+	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
@@ -35,6 +37,12 @@ type LoginResponse struct {
 		ID       uint   `json:"id"`
 		Username string `json:"username"`
 	} `json:"user"`
+}
+
+// Add JWT claims struct
+type Claims struct {
+	UserID uint `json:"user_id"`
+	jwt.RegisteredClaims
 }
 
 func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
@@ -120,6 +128,14 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 // Helper function to generate JWT token
 func generateToken(user models.User) (string, error) {
-	token := fmt.Sprintf("user-%d-token", user.ID)
-	return token, nil
+	claims := Claims{
+		user.ID,
+		jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour)),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+		},
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString([]byte(config.GetConfig().JWTSecret))
 }
