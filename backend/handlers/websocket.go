@@ -104,11 +104,23 @@ func (h *WebSocketHandler) HandleWebSocket(w http.ResponseWriter, r *http.Reques
 }
 
 func (h *WebSocketHandler) broadcast(msg Message) {
-	h.clients.Range(func(key, _ interface{}) bool {
+	// Track which users have received the message
+	sentToUsers := make(map[uint]bool)
+
+	h.clients.Range(func(key, value interface{}) bool {
 		conn := key.(*websocket.Conn)
+		userID := value.(uint)
+
+		// Skip if we already sent to this user
+		if sentToUsers[userID] {
+			return true
+		}
+
 		if err := conn.WriteJSON(msg); err != nil {
 			h.clients.Delete(conn)
 			conn.Close()
+		} else {
+			sentToUsers[userID] = true
 		}
 		return true
 	})
