@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/gorilla/websocket"
@@ -24,6 +25,12 @@ type Message struct {
 	Content   string `json:"content"`
 	UserID    uint   `json:"userId"`
 	SessionID uint   `json:"sessionId"`
+}
+
+// Add this struct for history messages
+type MessageHistory struct {
+	Type     string    `json:"type"`
+	Messages []Message `json:"messages"`
 }
 
 func NewWebSocketHandler(db *gorm.DB) *WebSocketHandler {
@@ -79,6 +86,31 @@ func (h *WebSocketHandler) HandleWebSocket(w http.ResponseWriter, r *http.Reques
 	// Store connection
 	h.clients.Store(conn, claims.UserID)
 	defer h.clients.Delete(conn)
+
+	// After successful auth, send message history
+	var messages []models.Message
+	if err := h.db.Where("session_id = ? AND created_at > ?",
+		r.URL.Query().Get("sessionId"),
+		time.Now().Add(-24*time.Hour), // Get last 24 hours of messages
+	).Order("created_at asc").Find(&messages).Error; err != nil {
+		log.Printf("error fetching message history: %v", err)
+	} else {
+		// Convert and send history
+		history := make([]Message, len(messages))
+		for i, msg := range messages {
+			history[i] = Message{
+				Type:      "message",
+				Content:   msg.Content,
+				UserID:    msg.UserID,
+				SessionID: msg.SessionID,
+			}
+		}
+
+		conn.WriteJSON(MessageHistory{
+			Type:     "history",
+			Messages: history,
+		})
+	}
 
 	// Handle messages
 	for {

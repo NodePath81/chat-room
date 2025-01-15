@@ -10,6 +10,13 @@ function ChatRoom() {
 
     useEffect(() => {
         WebSocketService.connect(sessionId);
+        
+        // Handle history messages
+        WebSocketService.onHistory((historyMessages) => {
+            setMessages(historyMessages);
+        });
+
+        // Handle new messages
         WebSocketService.onMessage((message) => {
             setMessages(prev => [...prev, message]);
         });

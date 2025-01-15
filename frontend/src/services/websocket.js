@@ -8,7 +8,7 @@ export class WebSocketService {
     const token = localStorage.getItem('token');
     if (!token) return;
 
-    const wsUrl = `ws://localhost:8080/ws`;
+    const wsUrl = `ws://localhost:8080/ws?sessionId=${sessionId}`;
     
     try {
         this.ws = new WebSocket(wsUrl);
@@ -29,6 +29,14 @@ export class WebSocketService {
         this.ws.onmessage = (event) => {
             try {
                 const message = JSON.parse(event.data);
+                
+                if (message.type === 'history') {
+                    if (this.handlers.has('history')) {
+                        this.handlers.get('history')(message.messages);
+                    }
+                    return;
+                }
+                
                 if (message.type === 'auth_success') {
                     console.log('Authenticated successfully');
                     return;
@@ -74,6 +82,10 @@ export class WebSocketService {
       this.ws.close();
       this.ws = null;
     }
+  }
+
+  onHistory(callback) {
+    this.handlers.set('history', callback);
   }
 }
 
