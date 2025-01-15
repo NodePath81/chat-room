@@ -58,6 +58,8 @@ func main() {
 			r.Get("/", sessionHandler.GetSessions)
 			r.Post("/", sessionHandler.CreateSession)
 			r.Get("/{id}", sessionHandler.GetSession)
+			r.Post("/{id}/join", sessionHandler.JoinSession)
+			r.Get("/{id}/check", sessionHandler.CheckSessionMembership)
 		})
 
 	})

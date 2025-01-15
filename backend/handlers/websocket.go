@@ -14,10 +14,15 @@ import (
 	"gorm.io/gorm"
 )
 
+type Client struct {
+	UserID    uint
+	SessionID uint
+}
+
 type WebSocketHandler struct {
 	db       *gorm.DB
 	upgrader websocket.Upgrader
-	clients  sync.Map
+	clients  sync.Map // websocket.Conn -> Client
 }
 
 type Message struct {
@@ -46,6 +51,13 @@ func NewWebSocketHandler(db *gorm.DB) *WebSocketHandler {
 }
 
 func (h *WebSocketHandler) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
+	// Get sessionId from query params
+	sessionID := r.URL.Query().Get("sessionId")
+	if sessionID == "" {
+		http.Error(w, "Session ID required", http.StatusBadRequest)
+		return
+	}
+
 	// Upgrade connection first
 	conn, err := h.upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -83,8 +95,22 @@ func (h *WebSocketHandler) HandleWebSocket(w http.ResponseWriter, r *http.Reques
 	// Send auth success
 	conn.WriteJSON(map[string]string{"type": "auth_success"})
 
-	// Store connection
-	h.clients.Store(conn, claims.UserID)
+	// Verify user is member of the session
+	var session models.Session
+	if err := h.db.Preload("Users", "id = ?", claims.UserID).First(&session, sessionID).Error; err != nil {
+		conn.WriteJSON(map[string]string{"error": "session not found or not a member"})
+		return
+	}
+	if len(session.Users) == 0 {
+		conn.WriteJSON(map[string]string{"error": "not a member of this session"})
+		return
+	}
+
+	// Store connection with both user and session ID
+	h.clients.Store(conn, Client{
+		UserID:    claims.UserID,
+		SessionID: session.ID,
+	})
 	defer h.clients.Delete(conn)
 
 	// After successful auth, send message history
@@ -141,10 +167,15 @@ func (h *WebSocketHandler) broadcast(msg Message) {
 
 	h.clients.Range(func(key, value interface{}) bool {
 		conn := key.(*websocket.Conn)
-		userID := value.(uint)
+		client := value.(Client)
+
+		// Only send to clients in the same session
+		if client.SessionID != msg.SessionID {
+			return true
+		}
 
 		// Skip if we already sent to this user
-		if sentToUsers[userID] {
+		if sentToUsers[client.UserID] {
 			return true
 		}
 
@@ -152,7 +183,7 @@ func (h *WebSocketHandler) broadcast(msg Message) {
 			h.clients.Delete(conn)
 			conn.Close()
 		} else {
-			sentToUsers[userID] = true
+			sentToUsers[client.UserID] = true
 		}
 		return true
 	})
