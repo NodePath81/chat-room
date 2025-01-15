@@ -4,6 +4,7 @@ import { useParams } from 'react-router-dom';
 import MessageList from './MessageList';
 import MessageInput from './MessageInput';
 import { WebSocketService } from '../services/websocket';
+import { authService } from '../services/auth';
 
 const ws = new WebSocketService(process.env.REACT_APP_WS_URL || 'ws://localhost:8080');
 
@@ -13,8 +14,8 @@ function ChatRoom() {
 
   useEffect(() => {
     if (sessionId) {
-      // TODO: Replace with actual token
-      ws.connect(sessionId, "dummy-token");
+      const token = authService.getToken();
+      ws.connect(sessionId, token);
     }
 
     return () => {

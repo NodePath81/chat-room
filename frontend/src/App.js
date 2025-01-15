@@ -1,8 +1,14 @@
 import React from 'react';
 import { ChakraProvider, Box } from '@chakra-ui/react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import ChatRoom from './components/ChatRoom';
 import HomePage from './components/HomePage';
+import LoginPage from './components/LoginPage';
+import { authService } from './services/auth';
+
+function PrivateRoute({ children }) {
+  return authService.isAuthenticated() ? children : <Navigate to="/login" />;
+}
 
 function App() {
   return (
@@ -10,8 +16,23 @@ function App() {
       <Router>
         <Box minH="100vh" bg="gray.100">
           <Routes>
-            <Route path="/" element={<HomePage />} />
-            <Route path="/chat/:sessionId" element={<ChatRoom />} />
+            <Route path="/login" element={<LoginPage />} />
+            <Route
+              path="/"
+              element={
+                <PrivateRoute>
+                  <HomePage />
+                </PrivateRoute>
+              }
+            />
+            <Route
+              path="/chat/:sessionId"
+              element={
+                <PrivateRoute>
+                  <ChatRoom />
+                </PrivateRoute>
+              }
+            />
           </Routes>
         </Box>
       </Router>

@@ -15,9 +15,11 @@ import {
   ModalCloseButton,
   List,
   ListItem,
-  Text
+  Text,
+  HStack,
 } from '@chakra-ui/react';
 import { useNavigate } from 'react-router-dom';
+import { authService } from '../services/auth';
 
 function HomePage() {
   const [sessions, setSessions] = useState([]);
@@ -26,12 +28,20 @@ function HomePage() {
   const navigate = useNavigate();
 
   useEffect(() => {
+    if (!authService.isAuthenticated()) {
+      navigate('/login');
+      return;
+    }
     fetchSessions();
-  }, []);
+  }, [navigate]);
 
   const fetchSessions = async () => {
     try {
-      const response = await fetch('http://localhost:8080/api/sessions');
+      const response = await fetch('http://localhost:8080/api/sessions', {
+        headers: {
+          'Authorization': `Bearer ${authService.getToken()}`,
+        },
+      });
       const data = await response.json();
       setSessions(data);
     } catch (error) {
@@ -45,6 +55,7 @@ function HomePage() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authService.getToken()}`,
         },
         body: JSON.stringify({ name: newSessionName }),
       });
@@ -57,10 +68,20 @@ function HomePage() {
     }
   };
 
+  const handleLogout = () => {
+    authService.logout();
+    navigate('/login');
+  };
+
   return (
     <Box p={8}>
       <VStack spacing={8} align="stretch">
-        <Heading>Chat Rooms</Heading>
+        <HStack justify="space-between">
+          <Heading>Chat Rooms</Heading>
+          <Button onClick={handleLogout} colorScheme="red" variant="outline">
+            Logout
+          </Button>
+        </HStack>
         
         <Button colorScheme="blue" onClick={onOpen}>
           Create New Chat Room

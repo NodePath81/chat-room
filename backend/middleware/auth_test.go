@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"chat-room/auth"
+
 	"github.com/golang-jwt/jwt/v5"
 )
 
@@ -26,7 +28,7 @@ func TestAuthMiddleware(t *testing.T) {
 	}{
 		{
 			name:       "valid token",
-			token:      generateTestToken(1),
+			token:      mustGenerateToken(t, 1),
 			wantStatus: http.StatusOK,
 		},
 		{
@@ -41,7 +43,7 @@ func TestAuthMiddleware(t *testing.T) {
 		},
 		{
 			name:       "expired token",
-			token:      generateExpiredToken(1),
+			token:      mustGenerateExpiredToken(t, 1),
 			wantStatus: http.StatusUnauthorized,
 		},
 	}
@@ -106,4 +108,20 @@ func generateExpiredToken(userID uint) string {
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	tokenString, _ := token.SignedString([]byte(config.GetConfig().JWTSecret))
 	return tokenString
+}
+
+func mustGenerateToken(t *testing.T, userID uint) string {
+	token, err := auth.GenerateTestToken(userID)
+	if err != nil {
+		t.Fatalf("failed to generate token: %v", err)
+	}
+	return token
+}
+
+func mustGenerateExpiredToken(t *testing.T, userID uint) string {
+	token, err := auth.GenerateExpiredToken(userID)
+	if err != nil {
+		t.Fatalf("failed to generate expired token: %v", err)
+	}
+	return token
 }

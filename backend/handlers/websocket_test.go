@@ -1,8 +1,10 @@
 package handlers
 
 import (
+	"chat-room/auth"
 	"chat-room/models"
 	"chat-room/tests"
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -11,65 +13,89 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-func TestWebSocketConnection(t *testing.T) {
+func TestWebSocket(t *testing.T) {
 	db := tests.SetupTestDB(t)
 	defer tests.CleanupTestDB(db)
 
-	handler := NewWebSocketHandler(db)
-
-	// Create test server
-	server := httptest.NewServer(http.HandlerFunc(handler.HandleWebSocket))
-	defer server.Close()
-
-	// Convert http URL to ws URL
-	wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
-
-	// Connect to WebSocket
-	ws, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
-	if err != nil {
-		t.Fatalf("could not open websocket connection: %v", err)
+	// Create test users
+	user1 := models.User{Username: "user1", Password: "pass1"}
+	user2 := models.User{Username: "user2", Password: "pass2"}
+	if err := db.Create(&user1).Error; err != nil {
+		t.Fatalf("failed to create user1: %v", err)
 	}
-	defer ws.Close()
+	if err := db.Create(&user2).Error; err != nil {
+		t.Fatalf("failed to create user2: %v", err)
+	}
 
 	// Create test session
-	session := models.Session{Name: "Test Room"}
-	db.Create(&session)
+	session := models.Session{
+		Name: "Test Room",
+		Users: []models.User{
+			user1,
+			user2,
+		},
+	}
+	if err := db.Create(&session).Error; err != nil {
+		t.Fatalf("failed to create session: %v", err)
+	}
 
-	// Test sending message
-	t.Run("send message", func(t *testing.T) {
-		message := Message{
-			Type:      "message",
-			Content:   "Hello, World!",
-			SessionID: session.ID,
-		}
+	handler := NewWebSocketHandler(db)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := context.WithValue(r.Context(), auth.UserIDKey, user1.ID)
+		handler.HandleWebSocket(w, r.WithContext(ctx))
+	}))
+	defer server.Close()
 
-		err := ws.WriteJSON(message)
-		if err != nil {
-			t.Fatalf("could not send message: %v", err)
-		}
+	wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
 
-		// Read response
-		var response Message
-		err = ws.ReadJSON(&response)
-		if err != nil {
-			t.Fatalf("could not read response: %v", err)
-		}
+	// Connect as user1
+	conn1, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	if err != nil {
+		t.Fatalf("user1 connection failed: %v", err)
+	}
+	defer conn1.Close()
 
-		if response.Type != "message" || response.Content != "Hello, World!" {
-			t.Errorf("unexpected response: %v", response)
-		}
-	})
+	// Connect as user2
+	server2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := context.WithValue(r.Context(), auth.UserIDKey, user2.ID)
+		handler.HandleWebSocket(w, r.WithContext(ctx))
+	}))
+	defer server2.Close()
+	wsURL2 := "ws" + strings.TrimPrefix(server2.URL, "http")
+	conn2, _, err := websocket.DefaultDialer.Dial(wsURL2, nil)
+	if err != nil {
+		t.Fatalf("user2 connection failed: %v", err)
+	}
+	defer conn2.Close()
 
-	// Verify message was saved to database
-	t.Run("verify message in database", func(t *testing.T) {
-		var message models.Message
-		err := db.Where("session_id = ?", session.ID).First(&message).Error
-		if err != nil {
-			t.Errorf("message not found in database: %v", err)
-		}
+	// Test message
+	testMsg := Message{
+		Type:      "message",
+		Content:   "Hello from user1",
+		SessionID: session.ID,
+	}
 
-		if message.Content != "Hello, World!" {
-			t.Errorf("unexpected message content: got %v, want Hello, World!", message.Content)
-		}
-	})
+	// User1 sends message
+	if err := conn1.WriteJSON(testMsg); err != nil {
+		t.Fatalf("failed to send message: %v", err)
+	}
+
+	// User2 should receive the message
+	var received Message
+	if err := conn2.ReadJSON(&received); err != nil {
+		t.Fatalf("user2 failed to receive message: %v", err)
+	}
+
+	if received.Content != testMsg.Content {
+		t.Errorf("got message %q, want %q", received.Content, testMsg.Content)
+	}
+	if received.UserID != user1.ID {
+		t.Errorf("got userID %d, want %d", received.UserID, user1.ID)
+	}
+
+	// Verify database
+	var saved models.Message
+	if err := db.First(&saved, "session_id = ? AND user_id = ?", session.ID, user1.ID).Error; err != nil {
+		t.Fatalf("message not saved: %v", err)
+	}
 }

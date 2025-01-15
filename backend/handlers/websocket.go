@@ -1,12 +1,11 @@
 package handlers
 
 import (
-	"encoding/json"
+	"chat-room/auth"
+	"chat-room/models"
 	"log"
 	"net/http"
 	"sync"
-
-	"chat-room/models"
 
 	"github.com/gorilla/websocket"
 	"gorm.io/gorm"
@@ -15,73 +14,71 @@ import (
 type WebSocketHandler struct {
 	db       *gorm.DB
 	upgrader websocket.Upgrader
-	clients  map[*websocket.Conn]bool
-	mutex    sync.Mutex
+	clients  sync.Map
+}
+
+type Message struct {
+	Type      string `json:"type"`
+	Content   string `json:"content"`
+	UserID    uint   `json:"userId"`
+	SessionID uint   `json:"sessionId"`
 }
 
 func NewWebSocketHandler(db *gorm.DB) *WebSocketHandler {
 	return &WebSocketHandler{
 		db: db,
 		upgrader: websocket.Upgrader{
-			CheckOrigin: func(r *http.Request) bool {
-				return true // Allow all origins in development
-			},
+			CheckOrigin: func(r *http.Request) bool { return true },
 		},
-		clients: make(map[*websocket.Conn]bool),
 	}
 }
 
-type Message struct {
-	Type      string          `json:"type"`
-	Content   string          `json:"content,omitempty"`
-	User      json.RawMessage `json:"user,omitempty"`
-	SessionID uint            `json:"sessionId"`
-}
-
 func (h *WebSocketHandler) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
+	userID := auth.GetUserIDFromContext(r)
+	if userID == 0 {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
 	conn, err := h.upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Printf("Error upgrading connection: %v", err)
+		log.Printf("websocket upgrade error: %v", err)
 		return
 	}
 	defer conn.Close()
 
-	h.mutex.Lock()
-	h.clients[conn] = true
-	h.mutex.Unlock()
+	h.clients.Store(conn, userID)
+	defer h.clients.Delete(conn)
 
 	for {
 		var msg Message
-		err := conn.ReadJSON(&msg)
-		if err != nil {
-			log.Printf("Error reading message: %v", err)
-			h.mutex.Lock()
-			delete(h.clients, conn)
-			h.mutex.Unlock()
+		if err := conn.ReadJSON(&msg); err != nil {
 			break
 		}
 
-		// Save message to database
+		msg.UserID = userID
 		if msg.Type == "message" {
-			dbMsg := models.Message{
+			if err := h.db.Create(&models.Message{
 				Content:   msg.Content,
+				UserID:    msg.UserID,
 				SessionID: msg.SessionID,
-			}
-			if err := h.db.Create(&dbMsg).Error; err != nil {
-				log.Printf("Error saving message: %v", err)
+			}).Error; err != nil {
+				log.Printf("error saving message: %v", err)
 				continue
 			}
 		}
 
-		// Broadcast message to all clients
-		h.mutex.Lock()
-		for client := range h.clients {
-			if err := client.WriteJSON(msg); err != nil {
-				log.Printf("Error broadcasting message: %v", err)
-				client.Close()
-				delete(h.clients, client)
-			}
-		}
-		h.mutex.Unlock()
+		h.broadcast(msg)
 	}
+}
+
+func (h *WebSocketHandler) broadcast(msg Message) {
+	h.clients.Range(func(key, _ interface{}) bool {
+		conn := key.(*websocket.Conn)
+		if err := conn.WriteJSON(msg); err != nil {
+			h.clients.Delete(conn)
+			conn.Close()
+		}
+		return true
+	})
 }

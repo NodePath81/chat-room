@@ -1,19 +1,14 @@
 package middleware
 
 import (
+	"chat-room/auth"
+	"chat-room/config"
 	"context"
 	"net/http"
 	"strings"
 
-	"chat-room/config"
-	"chat-room/handlers"
-
 	"github.com/golang-jwt/jwt/v5"
 )
-
-type contextKey string
-
-const UserIDKey contextKey = "userID"
 
 func AuthMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -29,7 +24,7 @@ func AuthMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		claims := &handlers.Claims{}
+		claims := &auth.Claims{}
 		token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
 			return []byte(config.GetConfig().JWTSecret), nil
 		})
@@ -39,13 +34,12 @@ func AuthMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		ctx := context.WithValue(r.Context(), UserIDKey, claims.UserID)
+		ctx := context.WithValue(r.Context(), auth.UserIDKey, claims.UserID)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 
-// Helper function to get user ID from context
 func GetUserID(r *http.Request) uint {
-	userID, _ := r.Context().Value(UserIDKey).(uint)
+	userID, _ := r.Context().Value(auth.UserIDKey).(uint)
 	return userID
 }
