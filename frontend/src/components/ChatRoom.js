@@ -27,7 +27,10 @@ function ChatRoom() {
                     const userData = await response.json();
                     setUsers(prev => ({
                         ...prev,
-                        [userId]: userData.username
+                        [userId]: {
+                            username: userData.username,
+                            avatarUrl: userData.avatarUrl
+                        }
                     }));
                 }
             } catch (error) {
@@ -107,18 +110,35 @@ function ChatRoom() {
                     {messages.map((msg, index) => (
                         <div 
                             key={index}
-                            className="bg-gray-50 rounded-lg p-3 shadow-sm hover:shadow-md transition-shadow"
+                            className="flex items-start gap-3 hover:bg-gray-50 p-2 rounded-lg transition-colors"
                         >
-                            <div className="flex justify-between items-center">
-                                <div className="font-semibold text-blue-600">
-                                    {users[msg.userId] || 'Loading...'}
-                                </div>
-                                <div className="text-xs text-gray-500">
-                                    {new Date(msg.timestamp).toLocaleString()}
-                                </div>
+                            <div className="flex-shrink-0 w-10 h-10">
+                                {users[msg.userId]?.avatarUrl ? (
+                                    <img
+                                        src={users[msg.userId].avatarUrl}
+                                        alt={`${users[msg.userId]?.username || 'User'}'s avatar`}
+                                        className="w-10 h-10 rounded-full object-cover"
+                                    />
+                                ) : (
+                                    <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
+                                        <span className="text-blue-600 font-semibold text-lg">
+                                            {(users[msg.userId]?.username || 'U')[0].toUpperCase()}
+                                        </span>
+                                    </div>
+                                )}
                             </div>
-                            <div className="text-gray-700 mt-1">
-                                {msg.content}
+                            <div className="flex-1">
+                                <div className="flex justify-between items-center">
+                                    <div className="font-semibold text-blue-600">
+                                        {users[msg.userId]?.username || 'Loading...'}
+                                    </div>
+                                    <div className="text-xs text-gray-500">
+                                        {new Date(msg.timestamp).toLocaleString()}
+                                    </div>
+                                </div>
+                                <div className="text-gray-700 mt-1">
+                                    {msg.content}
+                                </div>
                             </div>
                         </div>
                     ))}
