@@ -1,7 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Box, VStack, Button, Text, useToast, Input } from '@chakra-ui/react';
+import { 
+    Box, 
+    VStack, 
+    Button, 
+    Text, 
+    useToast, 
+    Input,
+    Flex,
+    Heading,
+    Spacer
+} from '@chakra-ui/react';
 import SessionService from '../services/session';
+import { authService } from '../services/auth';
 
 function HomePage() {
     const [sessions, setSessions] = useState([]);
@@ -129,8 +140,31 @@ function HomePage() {
         }
     };
 
+    const handleLogout = () => {
+        authService.logout();
+        navigate('/login');
+        toast({
+            title: "Logged out",
+            description: "You have been successfully logged out",
+            status: "success",
+            duration: 3000,
+        });
+    };
+
     return (
         <Box p={4}>
+            <Flex mb={6} alignItems="center">
+                <Heading size="lg">Chat Rooms</Heading>
+                <Spacer />
+                <Button 
+                    onClick={handleLogout}
+                    colorScheme="red"
+                    variant="outline"
+                >
+                    Logout
+                </Button>
+            </Flex>
+
             <VStack spacing={4} align="stretch">
                 <Box>
                     <Input
