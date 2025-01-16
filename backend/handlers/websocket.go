@@ -6,6 +6,7 @@ import (
 	"chat-room/models"
 	"log"
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
 
@@ -19,10 +20,15 @@ type Client struct {
 	SessionID uint
 }
 
+type SessionClients struct {
+	clients map[*websocket.Conn]Client
+	mu      sync.RWMutex
+}
+
 type WebSocketHandler struct {
 	db       *gorm.DB
 	upgrader websocket.Upgrader
-	clients  sync.Map // websocket.Conn -> Client
+	sessions sync.Map // map[uint]*SessionClients
 }
 
 type Message struct {
@@ -32,7 +38,6 @@ type Message struct {
 	SessionID uint   `json:"sessionId"`
 }
 
-// Add this struct for history messages
 type MessageHistory struct {
 	Type     string    `json:"type"`
 	Messages []Message `json:"messages"`
@@ -43,7 +48,6 @@ func NewWebSocketHandler(db *gorm.DB) *WebSocketHandler {
 		db: db,
 		upgrader: websocket.Upgrader{
 			CheckOrigin: func(r *http.Request) bool {
-				// Allow connections from frontend
 				return r.Header.Get("Origin") == "http://localhost:3000"
 			},
 		},
@@ -64,7 +68,7 @@ func (h *WebSocketHandler) HandleWebSocket(w http.ResponseWriter, r *http.Reques
 		log.Printf("websocket upgrade error: %v", err)
 		return
 	}
-	defer conn.Close()
+	defer h.removeConnection(sessionID, conn)
 
 	// Wait for auth message
 	var authMsg struct {
@@ -106,17 +110,16 @@ func (h *WebSocketHandler) HandleWebSocket(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	// Store connection with both user and session ID
-	h.clients.Store(conn, Client{
+	// Add connection to session clients
+	h.addConnection(session.ID, conn, Client{
 		UserID:    claims.UserID,
 		SessionID: session.ID,
 	})
-	defer h.clients.Delete(conn)
 
 	// After successful auth, send message history
 	var messages []models.Message
 	if err := h.db.Where("session_id = ? AND created_at > ?",
-		r.URL.Query().Get("sessionId"),
+		sessionID,
 		time.Now().Add(-24*time.Hour), // Get last 24 hours of messages
 	).Order("created_at asc").Find(&messages).Error; err != nil {
 		log.Printf("error fetching message history: %v", err)
@@ -157,34 +160,60 @@ func (h *WebSocketHandler) HandleWebSocket(w http.ResponseWriter, r *http.Reques
 			}
 		}
 
-		h.broadcast(msg)
+		h.broadcast(session.ID, msg)
 	}
 }
 
-func (h *WebSocketHandler) broadcast(msg Message) {
-	// Track which users have received the message
-	sentToUsers := make(map[uint]bool)
-
-	h.clients.Range(func(key, value interface{}) bool {
-		conn := key.(*websocket.Conn)
-		client := value.(Client)
-
-		// Only send to clients in the same session
-		if client.SessionID != msg.SessionID {
-			return true
-		}
-
-		// Skip if we already sent to this user
-		if sentToUsers[client.UserID] {
-			return true
-		}
-
-		if err := conn.WriteJSON(msg); err != nil {
-			h.clients.Delete(conn)
-			conn.Close()
-		} else {
-			sentToUsers[client.UserID] = true
-		}
-		return true
+func (h *WebSocketHandler) addConnection(sessionID uint, conn *websocket.Conn, client Client) {
+	sessionClientsInterface, _ := h.sessions.LoadOrStore(sessionID, &SessionClients{
+		clients: make(map[*websocket.Conn]Client),
 	})
+
+	sessionClients := sessionClientsInterface.(*SessionClients)
+	sessionClients.mu.Lock()
+	defer sessionClients.mu.Unlock()
+
+	sessionClients.clients[conn] = client
+}
+
+func (h *WebSocketHandler) removeConnection(sessionID string, conn *websocket.Conn) {
+	// Convert string sessionID to uint for sync.Map lookup
+	sid, _ := strconv.ParseUint(sessionID, 10, 64)
+	if sessionClientsInterface, ok := h.sessions.Load(uint(sid)); ok {
+		sessionClients := sessionClientsInterface.(*SessionClients)
+		sessionClients.mu.Lock()
+		defer sessionClients.mu.Unlock()
+
+		delete(sessionClients.clients, conn)
+		conn.Close()
+
+		// If session is empty, remove it
+		if len(sessionClients.clients) == 0 {
+			h.sessions.Delete(sessionID)
+		}
+	}
+}
+
+func (h *WebSocketHandler) broadcast(sessionID uint, msg Message) {
+	if sessionClientsInterface, ok := h.sessions.Load(sessionID); ok {
+		sessionClients := sessionClientsInterface.(*SessionClients)
+		sessionClients.mu.RLock()
+		defer sessionClients.mu.RUnlock()
+
+		sentToUsers := make(map[uint]bool)
+
+		for conn, client := range sessionClients.clients {
+			// Skip if already sent to this user
+			if sentToUsers[client.UserID] {
+				continue
+			}
+
+			if err := conn.WriteJSON(msg); err != nil {
+				// Convert uint to string properly for removeConnection
+				go h.removeConnection(strconv.FormatUint(uint64(sessionID), 10), conn)
+			} else {
+				sentToUsers[client.UserID] = true
+			}
+		}
+	}
 }

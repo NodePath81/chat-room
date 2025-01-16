@@ -1,6 +1,3 @@
-I'll create a comprehensive README.md for your chat application:
-
-```markdown:README.md
 # Real-time Chat Application
 
 A modern real-time chat application built with Go (backend) and React (frontend), featuring WebSocket communication and JWT authentication.
@@ -84,6 +81,8 @@ yarn start
 - `POST /api/auth/login` - Login and get JWT token
 
 ### Sessions (Protected Routes)
+- `GET /api/users/{id}` - Get public user information
+
 - `GET /api/sessions` - Get all chat sessions
 - `POST /api/sessions` - Create a new chat session
 - `GET /api/sessions/{id}` - Get session details
