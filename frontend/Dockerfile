@@ -8,17 +8,15 @@ COPY package.json yarn.lock ./
 # Install dependencies
 RUN yarn install
 
-# Copy source code
+# Copy source code and config files
 COPY . .
 
-# Build the application
+# Build the application (this will process Tailwind CSS)
 RUN yarn build
 
 # Install serve to run the built app
 RUN yarn global add serve
 
-# Expose port
 EXPOSE 3000
 
-# Run the application
 CMD ["serve", "-s", "build", "-l", "3000"] 
