@@ -13,6 +13,7 @@ function ChatRoom() {
     const [users, setUsers] = useState({});
 
     useEffect(() => {
+        const currentSessionId = parseInt(sessionId, 10);
         const fetchUsername = async (userId) => {
             if (users[userId]) return;
             
@@ -36,7 +37,7 @@ function ChatRoom() {
 
         async function checkAndJoinSession() {
             setIsLoading(true);
-            const isMember = await SessionService.checkSessionMembership(sessionId);
+            const isMember = await SessionService.checkSessionMembership(currentSessionId);
             
             if (!isMember) {
                 navigate('/');
@@ -46,33 +47,42 @@ function ChatRoom() {
             setIsJoined(true);
             setIsLoading(false);
             
-            WebSocketService.connect(parseInt(sessionId, 10));
+            WebSocketService.connect(currentSessionId);
             
             WebSocketService.onHistory((historyMessages) => {
                 setMessages(historyMessages);
                 const userIds = [...new Set(historyMessages.map(msg => msg.userId))];
                 userIds.forEach(userId => fetchUsername(userId));
-            });
+            }, currentSessionId);
 
             WebSocketService.onMessage((message) => {
-                setMessages(prev => [...prev, message]);
+                setMessages(prev => {
+                    const newMessages = [...prev, message];
+                    return newMessages.sort((a, b) => 
+                        new Date(a.timestamp) - new Date(b.timestamp)
+                    );
+                });
                 if (message.userId) {
                     fetchUsername(message.userId);
                 }
-            });
+            }, currentSessionId);
         }
 
         checkAndJoinSession();
 
         return () => {
-            WebSocketService.disconnect();
+            WebSocketService.removeHandlers(currentSessionId);
+            WebSocketService.disconnect(currentSessionId);
             setMessages([]);
+            setUsers({});
         };
     }, [sessionId, navigate]);
 
     const handleSend = () => {
         if (!isJoined || !newMessage.trim()) return;
-        WebSocketService.sendMessage(newMessage, parseInt(sessionId, 10));
+        
+        const currentSessionId = parseInt(sessionId, 10);
+        WebSocketService.sendMessage(newMessage, currentSessionId);
         setNewMessage('');
     };
 
@@ -99,8 +109,13 @@ function ChatRoom() {
                             key={index}
                             className="bg-gray-50 rounded-lg p-3 shadow-sm hover:shadow-md transition-shadow"
                         >
-                            <div className="font-semibold text-blue-600">
-                                {users[msg.userId] || 'Loading...'}
+                            <div className="flex justify-between items-center">
+                                <div className="font-semibold text-blue-600">
+                                    {users[msg.userId] || 'Loading...'}
+                                </div>
+                                <div className="text-xs text-gray-500">
+                                    {new Date(msg.timestamp).toLocaleString()}
+                                </div>
                             </div>
                             <div className="text-gray-700 mt-1">
                                 {msg.content}
@@ -108,7 +123,7 @@ function ChatRoom() {
                         </div>
                     ))}
                 </div>
-                
+
                 <div className="border-t p-4 bg-gray-50">
                     <div className="flex gap-4">
                         <input

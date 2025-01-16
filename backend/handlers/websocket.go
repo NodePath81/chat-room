@@ -2,218 +2,203 @@ package handlers
 
 import (
 	"chat-room/auth"
-	"chat-room/config"
-	"chat-room/models"
 	"log"
 	"net/http"
 	"strconv"
 	"sync"
 	"time"
 
-	"github.com/golang-jwt/jwt/v5"
 	"github.com/gorilla/websocket"
 	"gorm.io/gorm"
 )
 
+var upgrader = websocket.Upgrader{
+	ReadBufferSize:  1024,
+	WriteBufferSize: 1024,
+	CheckOrigin: func(r *http.Request) bool {
+		return true // Allow all origins in development
+	},
+}
+
 type Client struct {
-	UserID    uint
-	SessionID uint
+	UserID   uint
+	Username string
+	Conn     *websocket.Conn
+	mu       sync.Mutex
+}
+
+type Message struct {
+	UserID    uint      `json:"userId"`
+	Content   string    `json:"content"`
+	CreatedAt time.Time `json:"timestamp"`
+	SessionID uint      `json:"sessionId"`
 }
 
 type SessionClients struct {
-	clients map[*websocket.Conn]Client
+	Clients map[uint][]*Client // map[userID][]*Client
 	mu      sync.RWMutex
 }
 
 type WebSocketHandler struct {
-	db       *gorm.DB
-	upgrader websocket.Upgrader
 	sessions sync.Map // map[uint]*SessionClients
-}
-
-type Message struct {
-	Type      string `json:"type"`
-	Content   string `json:"content"`
-	UserID    uint   `json:"userId"`
-	SessionID uint   `json:"sessionId"`
-}
-
-type MessageHistory struct {
-	Type     string    `json:"type"`
-	Messages []Message `json:"messages"`
+	db       *gorm.DB
 }
 
 func NewWebSocketHandler(db *gorm.DB) *WebSocketHandler {
 	return &WebSocketHandler{
 		db: db,
-		upgrader: websocket.Upgrader{
-			CheckOrigin: func(r *http.Request) bool {
-				return r.Header.Get("Origin") == "http://localhost:3000"
-			},
-		},
 	}
 }
 
 func (h *WebSocketHandler) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
-	// Get sessionId from query params
-	sessionID := r.URL.Query().Get("sessionId")
-	if sessionID == "" {
-		http.Error(w, "Session ID required", http.StatusBadRequest)
-		return
-	}
-
-	// Upgrade connection first
-	conn, err := h.upgrader.Upgrade(w, r, nil)
+	sessionID, err := strconv.ParseUint(r.URL.Query().Get("sessionId"), 10, 64)
 	if err != nil {
-		log.Printf("websocket upgrade error: %v", err)
+		http.Error(w, "Invalid session ID", http.StatusBadRequest)
 		return
 	}
-	defer h.removeConnection(sessionID, conn)
 
-	// Wait for auth message
+	conn, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		log.Printf("WebSocket upgrade error: %v", err)
+		return
+	}
+
+	// Wait for authentication message
 	var authMsg struct {
-		Type  string `json:"type"`
 		Token string `json:"token"`
 	}
 	if err := conn.ReadJSON(&authMsg); err != nil {
-		log.Printf("auth message error: %v", err)
+		conn.Close()
 		return
 	}
 
-	if authMsg.Type != "auth" || authMsg.Token == "" {
-		conn.WriteJSON(map[string]string{"error": "unauthorized"})
-		return
-	}
-
-	// Parse and validate token
-	claims := &auth.Claims{}
-	parsedToken, err := jwt.ParseWithClaims(authMsg.Token, claims, func(token *jwt.Token) (interface{}, error) {
-		return []byte(config.GetConfig().JWTSecret), nil
-	})
-
-	if err != nil || !parsedToken.Valid {
+	claims, err := auth.ParseToken(authMsg.Token)
+	if err != nil {
 		conn.WriteJSON(map[string]string{"error": "invalid token"})
+		conn.Close()
 		return
 	}
 
-	// Send auth success
-	conn.WriteJSON(map[string]string{"type": "auth_success"})
-
-	// Verify user is member of the session
-	var session models.Session
-	if err := h.db.Preload("Users", "id = ?", claims.UserID).First(&session, sessionID).Error; err != nil {
-		conn.WriteJSON(map[string]string{"error": "session not found or not a member"})
-		return
-	}
-	if len(session.Users) == 0 {
-		conn.WriteJSON(map[string]string{"error": "not a member of this session"})
-		return
-	}
-
-	// Add connection to session clients
-	h.addConnection(session.ID, conn, Client{
-		UserID:    claims.UserID,
-		SessionID: session.ID,
+	// Get or create session clients
+	sessionClientsInterface, _ := h.sessions.LoadOrStore(uint(sessionID), &SessionClients{
+		Clients: make(map[uint][]*Client),
 	})
+	sessionClients := sessionClientsInterface.(*SessionClients)
 
-	// After successful auth, send message history
-	var messages []models.Message
-	if err := h.db.Where("session_id = ? AND created_at > ?",
-		sessionID,
-		time.Now().Add(-24*time.Hour), // Get last 24 hours of messages
-	).Order("created_at asc").Find(&messages).Error; err != nil {
-		log.Printf("error fetching message history: %v", err)
-	} else {
-		// Convert and send history
-		history := make([]Message, len(messages))
-		for i, msg := range messages {
-			history[i] = Message{
-				Type:      "message",
-				Content:   msg.Content,
-				UserID:    msg.UserID,
-				SessionID: msg.SessionID,
-			}
-		}
+	// Create new client
+	client := &Client{
+		UserID: claims.UserID,
+		Conn:   conn,
+	}
 
-		conn.WriteJSON(MessageHistory{
-			Type:     "history",
-			Messages: history,
+	// Add client to session
+	sessionClients.mu.Lock()
+	if _, exists := sessionClients.Clients[claims.UserID]; !exists {
+		sessionClients.Clients[claims.UserID] = make([]*Client, 0)
+	}
+	sessionClients.Clients[claims.UserID] = append(sessionClients.Clients[claims.UserID], client)
+	sessionClients.mu.Unlock()
+
+	// Send message history
+	history, err := h.GetSessionMessages(uint(sessionID))
+	if err == nil {
+		conn.WriteJSON(map[string]interface{}{
+			"type":     "history",
+			"messages": history,
 		})
 	}
 
 	// Handle messages
-	for {
-		var msg Message
-		if err := conn.ReadJSON(&msg); err != nil {
-			break
-		}
+	go func() {
+		defer h.removeConnection(uint(sessionID), claims.UserID, client)
 
-		msg.UserID = claims.UserID
-		if msg.Type == "message" {
-			if err := h.db.Create(&models.Message{
+		for {
+			var msg struct {
+				Content string `json:"content"`
+			}
+			if err := conn.ReadJSON(&msg); err != nil {
+				return
+			}
+
+			message := Message{
+				UserID:    claims.UserID,
 				Content:   msg.Content,
-				UserID:    msg.UserID,
-				SessionID: msg.SessionID,
-			}).Error; err != nil {
-				log.Printf("error saving message: %v", err)
+				CreatedAt: time.Now().UTC(),
+				SessionID: uint(sessionID),
+			}
+
+			// Save message to database
+			if err := h.SaveMessage(uint(sessionID), message); err != nil {
+				log.Printf("Error saving message: %v", err)
 				continue
 			}
-		}
 
-		h.broadcast(session.ID, msg)
-	}
+			// Broadcast message
+			h.broadcast(uint(sessionID), message)
+		}
+	}()
 }
 
-func (h *WebSocketHandler) addConnection(sessionID uint, conn *websocket.Conn, client Client) {
-	sessionClientsInterface, _ := h.sessions.LoadOrStore(sessionID, &SessionClients{
-		clients: make(map[*websocket.Conn]Client),
-	})
+func (h *WebSocketHandler) removeConnection(sessionID, userID uint, client *Client) {
+	sessionClientsInterface, ok := h.sessions.Load(sessionID)
+	if !ok {
+		return
+	}
 
 	sessionClients := sessionClientsInterface.(*SessionClients)
 	sessionClients.mu.Lock()
 	defer sessionClients.mu.Unlock()
 
-	sessionClients.clients[conn] = client
+	clients := sessionClients.Clients[userID]
+	for i, c := range clients {
+		if c == client {
+			// Remove this specific client
+			sessionClients.Clients[userID] = append(clients[:i], clients[i+1:]...)
+			break
+		}
+	}
+
+	// If no more clients for this user in this session, remove the user
+	if len(sessionClients.Clients[userID]) == 0 {
+		delete(sessionClients.Clients, userID)
+	}
+
+	// If no more clients in the session, remove the session
+	if len(sessionClients.Clients) == 0 {
+		h.sessions.Delete(sessionID)
+	}
+
+	client.Conn.Close()
 }
 
-func (h *WebSocketHandler) removeConnection(sessionID string, conn *websocket.Conn) {
-	// Convert string sessionID to uint for sync.Map lookup
-	sid, _ := strconv.ParseUint(sessionID, 10, 64)
-	if sessionClientsInterface, ok := h.sessions.Load(uint(sid)); ok {
-		sessionClients := sessionClientsInterface.(*SessionClients)
-		sessionClients.mu.Lock()
-		defer sessionClients.mu.Unlock()
+func (h *WebSocketHandler) broadcast(sessionID uint, message Message) {
+	sessionClientsInterface, ok := h.sessions.Load(sessionID)
+	if !ok {
+		return
+	}
 
-		delete(sessionClients.clients, conn)
-		conn.Close()
+	sessionClients := sessionClientsInterface.(*SessionClients)
+	sessionClients.mu.RLock()
+	defer sessionClients.mu.RUnlock()
 
-		// If session is empty, remove it
-		if len(sessionClients.clients) == 0 {
-			h.sessions.Delete(sessionID)
+	// Broadcast to all clients in the session
+	for _, clients := range sessionClients.Clients {
+		for _, client := range clients {
+			client.mu.Lock()
+			if err := client.Conn.WriteJSON(message); err != nil {
+				log.Printf("Error broadcasting to client: %v", err)
+			}
+			client.mu.Unlock()
 		}
 	}
 }
 
-func (h *WebSocketHandler) broadcast(sessionID uint, msg Message) {
-	if sessionClientsInterface, ok := h.sessions.Load(sessionID); ok {
-		sessionClients := sessionClientsInterface.(*SessionClients)
-		sessionClients.mu.RLock()
-		defer sessionClients.mu.RUnlock()
+func (h *WebSocketHandler) GetSessionMessages(sessionID uint) ([]Message, error) {
+	var messages []Message
+	err := h.db.Where("session_id = ?", sessionID).Order("created_at asc").Find(&messages).Error
+	return messages, err
+}
 
-		sentToUsers := make(map[uint]bool)
-
-		for conn, client := range sessionClients.clients {
-			// Skip if already sent to this user
-			if sentToUsers[client.UserID] {
-				continue
-			}
-
-			if err := conn.WriteJSON(msg); err != nil {
-				// Convert uint to string properly for removeConnection
-				go h.removeConnection(strconv.FormatUint(uint64(sessionID), 10), conn)
-			} else {
-				sentToUsers[client.UserID] = true
-			}
-		}
-	}
+func (h *WebSocketHandler) SaveMessage(sessionID uint, message Message) error {
+	return h.db.Create(&message).Error
 }

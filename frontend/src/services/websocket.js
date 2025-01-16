@@ -2,145 +2,96 @@ import { API_ENDPOINTS } from '../config';
 
 export class WebSocketService {
   constructor() {
-    this.ws = null;
-    this.handlers = new Map();
-    this.reconnectTimeout = null;
-    this.currentSessionId = null;
-    this.isConnecting = false;
-    this.maxRetries = 3;
-    this.retryCount = 0;
+    this.connections = new Map(); // sessionId -> { ws, messageHandlers, historyHandlers }
+    this.maxReconnectAttempts = 5;
   }
 
   connect(sessionId) {
-    if (this.isConnecting) return;
-    this.isConnecting = true;
-    this.currentSessionId = parseInt(sessionId, 10);
-
-    const token = localStorage.getItem('token');
-    if (!token) {
-        this.isConnecting = false;
-        return;
+    // If connection already exists for this session, close it
+    if (this.connections.has(sessionId)) {
+      this.disconnect(sessionId);
     }
 
-    const wsUrl = API_ENDPOINTS.WEBSOCKET(this.currentSessionId);
-    
-    try {
-        this.ws = new WebSocket(wsUrl);
-        
-        this.ws.onopen = () => {
-            console.log('Connected to WebSocket for session:', this.currentSessionId);
-            this.isConnecting = false;
-            this.retryCount = 0;
-            this.ws.send(JSON.stringify({
-                type: 'auth',
-                token: token
-            }));
-        };
+    const connection = {
+      ws: new WebSocket(`${process.env.REACT_APP_WS_URL || 'ws://localhost:8080'}/ws?sessionId=${sessionId}`),
+      messageHandlers: [],
+      historyHandlers: [],
+      reconnectAttempts: 0
+    };
 
-        this.ws.onclose = (event) => {
-            this.isConnecting = false;
-            console.log('WebSocket connection closed:', event.code);
-            
-            if (this.retryCount < this.maxRetries) {
-                this.retryCount++;
-                const delay = Math.min(1000 * Math.pow(2, this.retryCount), 10000);
-                this.reconnectTimeout = setTimeout(() => {
-                    if (this.currentSessionId === parseInt(sessionId, 10)) {
-                        this.connect(sessionId);
-                    }
-                }, delay);
-            } else {
-                console.log('Max retries reached, stopping reconnection');
-            }
-        };
+    connection.ws.onopen = () => {
+      // Send authentication message
+      const token = localStorage.getItem('token');
+      connection.ws.send(JSON.stringify({ token }));
+      connection.reconnectAttempts = 0;
+    };
 
-        this.ws.onmessage = (event) => {
-            try {
-                const message = JSON.parse(event.data);
-                
-                if (message.type === 'history') {
-                    if (this.handlers.has('history')) {
-                        this.handlers.get('history')(message.messages);
-                    }
-                    return;
-                }
-                
-                if (message.type === 'auth_success') {
-                    console.log('Authenticated successfully');
-                    return;
-                }
+    connection.ws.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      if (data.type === 'history') {
+        // Sort messages by timestamp
+        const sortedMessages = data.messages.sort((a, b) => 
+          new Date(a.timestamp) - new Date(b.timestamp)
+        );
+        connection.historyHandlers.forEach(handler => handler(sortedMessages));
+      } else {
+        connection.messageHandlers.forEach(handler => handler(data));
+      }
+    };
 
-                if (message.error) {
-                    console.error('WebSocket error:', message.error);
-                    this.disconnect();
-                    return;
-                }
+    connection.ws.onclose = () => {
+      if (connection.reconnectAttempts < this.maxReconnectAttempts) {
+        setTimeout(() => {
+          connection.reconnectAttempts++;
+          this.connect(sessionId);
+        }, Math.min(1000 * Math.pow(2, connection.reconnectAttempts), 30000));
+      }
+    };
 
-                if (this.handlers.has('message')) {
-                    this.handlers.get('message')(message);
-                }
-            } catch (e) {
-                console.error('Error parsing message:', e);
-            }
-        };
+    this.connections.set(sessionId, connection);
+  }
 
-        this.ws.onerror = (error) => {
-            console.error('WebSocket error:', error);
-            this.isConnecting = false;
-        };
-    } catch (error) {
-        console.error('Failed to connect:', error);
-        this.isConnecting = false;
+  disconnect(sessionId) {
+    const connection = this.connections.get(sessionId);
+    if (connection) {
+      connection.ws.close();
+      this.connections.delete(sessionId);
+    }
+  }
+
+  disconnectAll() {
+    for (const [sessionId] of this.connections) {
+      this.disconnect(sessionId);
     }
   }
 
   sendMessage(content, sessionId) {
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-        console.error('WebSocket not connected');
-        return;
+    const connection = this.connections.get(sessionId);
+    if (connection && connection.ws.readyState === WebSocket.OPEN) {
+      connection.ws.send(JSON.stringify({ content }));
     }
-
-    const parsedSessionId = parseInt(sessionId, 10);
-    if (parsedSessionId !== this.currentSessionId) {
-        console.error('Cannot send message to different session', parsedSessionId, this.currentSessionId);
-        return;
-    }
-
-    const message = {
-      type: 'message',
-      content: content,
-      sessionId: parsedSessionId
-    };
-
-    this.ws.send(JSON.stringify(message));
   }
 
-  onMessage(callback) {
-    this.handlers.set('message', callback);
+  onMessage(handler, sessionId) {
+    const connection = this.connections.get(sessionId);
+    if (connection) {
+      connection.messageHandlers.push(handler);
+    }
   }
 
-  disconnect() {
-    this.isConnecting = false;
-    this.retryCount = this.maxRetries; // Stop reconnection attempts
-    
-    if (this.reconnectTimeout) {
-        clearTimeout(this.reconnectTimeout);
-        this.reconnectTimeout = null;
+  onHistory(handler, sessionId) {
+    const connection = this.connections.get(sessionId);
+    if (connection) {
+      connection.historyHandlers.push(handler);
     }
-
-    this.handlers.clear();
-
-    if (this.ws) {
-        this.ws.onclose = null;
-        this.ws.close();
-        this.ws = null;
-    }
-
-    this.currentSessionId = null;
   }
 
-  onHistory(callback) {
-    this.handlers.set('history', callback);
+  removeHandlers(sessionId) {
+    const connection = this.connections.get(sessionId);
+    if (connection) {
+      connection.messageHandlers = [];
+      connection.historyHandlers = [];
+    }
   }
 }
 
