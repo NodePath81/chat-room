@@ -1,3 +1,5 @@
+import { API_ENDPOINTS } from '../config';
+
 export class WebSocketService {
   constructor() {
     this.ws = null;
@@ -20,7 +22,7 @@ export class WebSocketService {
         return;
     }
 
-    const wsUrl = `ws://localhost:8080/ws?sessionId=${this.currentSessionId}`;
+    const wsUrl = API_ENDPOINTS.WEBSOCKET(this.currentSessionId);
     
     try {
         this.ws = new WebSocket(wsUrl);

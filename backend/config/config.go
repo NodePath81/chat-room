@@ -1,10 +1,7 @@
 package config
 
 import (
-	"fmt"
 	"os"
-
-	"github.com/joho/godotenv"
 )
 
 type Config struct {
@@ -24,11 +21,6 @@ func GetConfig() *Config {
 }
 
 func LoadConfig() (*Config, error) {
-	err := godotenv.Load()
-	if err != nil {
-		return nil, fmt.Errorf("error loading .env file: %w", err)
-	}
-
 	globalConfig = &Config{
 		DBHost:     getEnv("DB_HOST", "localhost"),
 		DBPort:     getEnv("DB_PORT", "5432"),
@@ -50,7 +42,6 @@ func getEnv(key, defaultValue string) string {
 	return value
 }
 
-// Add this function for testing
 func SetConfig(cfg *Config) {
 	globalConfig = cfg
 }

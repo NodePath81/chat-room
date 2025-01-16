@@ -1,10 +1,12 @@
+import { API_ENDPOINTS } from '../config';
+
 class SessionService {
     async joinSession(sessionId) {
         const token = localStorage.getItem('token');
         if (!token) return false;
 
         try {
-            const response = await fetch(`http://localhost:8080/api/sessions/${sessionId}/join`, {
+            const response = await fetch(API_ENDPOINTS.SESSIONS.JOIN(sessionId), {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${token}`,
@@ -28,7 +30,7 @@ class SessionService {
         if (!token) return false;
 
         try {
-            const response = await fetch(`http://localhost:8080/api/sessions/${sessionId}/check`, {
+            const response = await fetch(API_ENDPOINTS.SESSIONS.CHECK(sessionId), {
                 headers: {
                     'Authorization': `Bearer ${token}`
                 }

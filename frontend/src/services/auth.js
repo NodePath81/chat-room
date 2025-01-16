@@ -1,8 +1,8 @@
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8080';
+import { API_ENDPOINTS } from '../config';
 
 export const authService = {
   async register(username, password) {
-    const response = await fetch(`${API_URL}/api/auth/register`, {
+    const response = await fetch(API_ENDPOINTS.AUTH.REGISTER, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -15,7 +15,7 @@ export const authService = {
   },
 
   async login(username, password) {
-    const response = await fetch(`${API_URL}/api/auth/login`, {
+    const response = await fetch(API_ENDPOINTS.AUTH.LOGIN, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
