@@ -1,16 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { 
-    Box, 
-    VStack, 
-    Button, 
-    Text, 
-    useToast, 
-    Input,
-    Flex,
-    Heading,
-    Spacer
-} from '@chakra-ui/react';
 import SessionService from '../services/session';
 import { authService } from '../services/auth';
 
@@ -18,7 +7,6 @@ function HomePage() {
     const [sessions, setSessions] = useState([]);
     const [newSessionName, setNewSessionName] = useState('');
     const navigate = useNavigate();
-    const toast = useToast();
 
     useEffect(() => {
         fetchSessions();
@@ -36,9 +24,6 @@ function HomePage() {
                 throw new Error('Failed to fetch sessions');
             }
             const data = await response.json();
-            console.log('Fetched sessions:', data);
-            
-            // Map the response to match frontend expectations
             const mappedSessions = data.map(session => ({
                 id: session.ID,
                 name: session.name,
@@ -47,16 +32,9 @@ function HomePage() {
                     username: user.Username
                 })) || []
             }));
-            
             setSessions(mappedSessions);
         } catch (error) {
             console.error('Fetch error:', error);
-            toast({
-                title: "Error",
-                description: "Failed to fetch sessions",
-                status: "error",
-                duration: 3000,
-            });
         }
     };
 
@@ -75,139 +53,98 @@ function HomePage() {
             });
 
             if (!response.ok) {
-                const errorText = await response.text();
-                console.error('Create session error:', errorText);
                 throw new Error('Failed to create session');
             }
 
             const newSession = await response.json();
-            console.log('Created session:', newSession);
-            
             setNewSessionName('');
             await fetchSessions();
             
             if (newSession && newSession.ID) {
                 await handleJoinSession(newSession.ID);
-            } else {
-                console.error('Invalid session data:', newSession);
-                throw new Error('Invalid session ID');
             }
         } catch (error) {
             console.error('Creation error:', error);
-            toast({
-                title: "Error",
-                description: "Failed to create session",
-                status: "error",
-                duration: 3000,
-            });
         }
     };
 
     const handleJoinSession = async (sessionId) => {
         try {
-            // Check if already a member
             const isMember = await SessionService.checkSessionMembership(sessionId);
             
             if (!isMember) {
-                // Try to join
                 const joined = await SessionService.joinSession(sessionId);
-                if (!joined) {
-                    toast({
-                        title: "Error",
-                        description: "Failed to join session",
-                        status: "error",
-                        duration: 3000,
-                    });
-                    return;
-                }
-                toast({
-                    title: "Success",
-                    description: "Successfully joined session",
-                    status: "success",
-                    duration: 3000,
-                });
+                if (!joined) return;
             }
             
-            // Navigate to chat room after successful join
             navigate(`/chat/${sessionId}`);
         } catch (error) {
-            toast({
-                title: "Error",
-                description: "Failed to join session",
-                status: "error",
-                duration: 3000,
-            });
+            console.error('Join error:', error);
         }
     };
 
     const handleLogout = () => {
         authService.logout();
         navigate('/login');
-        toast({
-            title: "Logged out",
-            description: "You have been successfully logged out",
-            status: "success",
-            duration: 3000,
-        });
     };
 
     return (
-        <Box p={4}>
-            <Flex mb={6} alignItems="center">
-                <Heading size="lg">Chat Rooms</Heading>
-                <Spacer />
-                <Button 
-                    onClick={handleLogout}
-                    colorScheme="red"
-                    variant="outline"
-                >
-                    Logout
-                </Button>
-            </Flex>
+        <div className="min-h-screen bg-gray-100 p-6">
+            <div className="max-w-4xl mx-auto">
+                <div className="flex justify-between items-center mb-8">
+                    <h1 className="text-3xl font-bold text-gray-800">Chat Rooms</h1>
+                    <button
+                        onClick={handleLogout}
+                        className="px-4 py-2 bg-red-500 text-white rounded-md hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2"
+                    >
+                        Logout
+                    </button>
+                </div>
 
-            <VStack spacing={4} align="stretch">
-                <Box>
-                    <Input
-                        value={newSessionName}
-                        onChange={(e) => setNewSessionName(e.target.value)}
-                        placeholder="New session name"
-                    />
-                    <Button onClick={createSession} ml={2}>
-                        Create Session
-                    </Button>
-                </Box>
-                
-                <Box>
-                    <Text fontSize="xl" mb={4}>Available Sessions</Text>
-                    <VStack spacing={2} align="stretch">
-                        {sessions && sessions.length > 0 ? (
+                <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+                    <div className="flex gap-4">
+                        <input
+                            type="text"
+                            value={newSessionName}
+                            onChange={(e) => setNewSessionName(e.target.value)}
+                            placeholder="New session name"
+                            className="flex-1 px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                        <button
+                            onClick={createSession}
+                            className="px-6 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                        >
+                            Create Session
+                        </button>
+                    </div>
+                </div>
+
+                <div className="bg-white rounded-lg shadow-md p-6">
+                    <h2 className="text-xl font-semibold mb-4">Available Sessions</h2>
+                    <div className="space-y-3">
+                        {sessions.length > 0 ? (
                             sessions.map(session => (
-                                <Box 
+                                <div
                                     key={`session-${session.id}`}
-                                    p={4} 
-                                    borderWidth={1} 
-                                    borderRadius="md"
-                                    display="flex"
-                                    justifyContent="space-between"
-                                    alignItems="center"
+                                    className="flex justify-between items-center p-4 bg-gray-50 rounded-md hover:bg-gray-100"
                                 >
-                                    <Text>{session.name}</Text>
-                                    <Button 
+                                    <span className="text-gray-700">{session.name}</span>
+                                    <button
                                         onClick={() => session.id && handleJoinSession(session.id)}
-                                        colorScheme="blue"
-                                        isDisabled={!session.id}
+                                        className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                                        disabled={!session.id}
                                     >
                                         Join Chat
-                                    </Button>
-                                </Box>
+                                    </button>
+                                </div>
                             ))
                         ) : (
-                            <Text>No sessions available</Text>
+                            <p className="text-gray-500 text-center py-4">No sessions available</p>
                         )}
-                    </VStack>
-                </Box>
-            </VStack>
-        </Box>
+                    </div>
+                </div>
+            </div>
+        </div>
     );
 }
 
