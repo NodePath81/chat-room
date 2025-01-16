@@ -22,18 +22,20 @@ func (h *UserHandler) GetUser(w http.ResponseWriter, r *http.Request) {
 	userID := chi.URLParam(r, "id")
 
 	var user models.User
-	if err := h.db.Select("id, username").First(&user, userID).Error; err != nil {
+	if err := h.db.Select("id, username, avatar_url").First(&user, userID).Error; err != nil {
 		http.Error(w, "User not found", http.StatusNotFound)
 		return
 	}
 
 	// Only return public user information
 	response := struct {
-		ID       uint   `json:"id"`
-		Username string `json:"username"`
+		ID        uint   `json:"id"`
+		Username  string `json:"username"`
+		AvatarURL string `json:"avatarUrl"`
 	}{
-		ID:       user.ID,
-		Username: user.Username,
+		ID:        user.ID,
+		Username:  user.Username,
+		AvatarURL: user.AvatarURL,
 	}
 
 	w.Header().Set("Content-Type", "application/json")

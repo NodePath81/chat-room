@@ -4,6 +4,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import ChatRoom from './components/ChatRoom';
 import HomePage from './components/HomePage';
 import LoginPage from './components/LoginPage';
+import UserPage from './components/UserPage';
 import { authService } from './services/auth';
 
 function PrivateRoute({ children }) {
@@ -30,6 +31,14 @@ function App() {
               element={
                 <PrivateRoute>
                   <ChatRoom />
+                </PrivateRoute>
+              }
+            />
+            <Route
+              path="/profile"
+              element={
+                <PrivateRoute>
+                  <UserPage />
                 </PrivateRoute>
               }
             />

@@ -2,12 +2,9 @@ package middleware
 
 import (
 	"chat-room/auth"
-	"chat-room/config"
 	"context"
 	"net/http"
 	"strings"
-
-	"github.com/golang-jwt/jwt/v5"
 )
 
 func AuthMiddleware(next http.Handler) http.Handler {
@@ -18,23 +15,21 @@ func AuthMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		tokenString := strings.TrimPrefix(authHeader, "Bearer ")
-		if tokenString == authHeader {
-			http.Error(w, "Invalid token format", http.StatusUnauthorized)
+		bearerToken := strings.Split(authHeader, " ")
+		if len(bearerToken) != 2 || strings.ToLower(bearerToken[0]) != "bearer" {
+			http.Error(w, "Invalid authorization header format", http.StatusUnauthorized)
 			return
 		}
 
-		claims := &auth.Claims{}
-		token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
-			return []byte(config.GetConfig().JWTSecret), nil
-		})
-
-		if err != nil || !token.Valid {
+		claims, err := auth.ValidateToken(bearerToken[1])
+		if err != nil {
 			http.Error(w, "Invalid token", http.StatusUnauthorized)
 			return
 		}
 
-		ctx := context.WithValue(r.Context(), auth.UserIDKey, claims.UserID)
+		// Store both claims and userID in context
+		ctx := context.WithValue(r.Context(), "claims", claims)
+		ctx = context.WithValue(ctx, auth.UserIDKey, claims.UserID)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }

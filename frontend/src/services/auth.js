@@ -28,6 +28,9 @@ export const authService = {
     const data = await response.json();
     localStorage.setItem('token', data.token);
     localStorage.setItem('user', JSON.stringify(data.user));
+
+    // Fetch latest user data including avatar URL
+    await this.fetchUserData();
     return data;
   },
 
@@ -47,5 +50,33 @@ export const authService = {
 
   isAuthenticated() {
     return !!this.getToken();
+  },
+
+  updateStoredUser(userData) {
+    localStorage.setItem('user', JSON.stringify(userData));
+  },
+
+  async fetchUserData() {
+    const user = this.getUser();
+    if (!user) return null;
+
+    try {
+      const response = await fetch(`${API_ENDPOINTS.USERS.GET(user.id)}`, {
+        headers: {
+          'Authorization': `Bearer ${this.getToken()}`
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch user data');
+      }
+
+      const userData = await response.json();
+      this.updateStoredUser(userData);
+      return userData;
+    } catch (error) {
+      console.error('Error fetching user data:', error);
+      return null;
+    }
   }
 }; 

@@ -8,6 +8,7 @@ import (
 	"chat-room/database"
 	"chat-room/handlers"
 	custommw "chat-room/middleware"
+	"chat-room/s3"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -27,11 +28,18 @@ func main() {
 		log.Fatal(err)
 	}
 
+	// Initialize MinIO
+	err = s3.Initialize(cfg)
+	if err != nil {
+		log.Fatal("Failed to initialize MinIO:", err)
+	}
+
 	// Initialize handlers
 	authHandler := handlers.NewAuthHandler(db)
 	sessionHandler := handlers.NewSessionHandler(db)
 	wsHandler := handlers.NewWebSocketHandler(db)
 	userHandler := handlers.NewUserHandler(db)
+	avatarHandler := handlers.NewAvatarHandler(db)
 
 	// Setup router
 	r := chi.NewRouter()
@@ -49,23 +57,30 @@ func main() {
 	// Routes
 	r.Post("/api/auth/register", authHandler.Register)
 	r.Post("/api/auth/login", authHandler.Login)
-	r.HandleFunc("/ws", wsHandler.HandleWebSocket)
 
-	// Protected routes
+	// Session routes
 	r.Group(func(r chi.Router) {
 		r.Use(custommw.AuthMiddleware)
-
-		r.Route("/api/sessions", func(r chi.Router) {
-			r.Get("/", sessionHandler.GetSessions)
-			r.Post("/", sessionHandler.CreateSession)
-			r.Get("/{id}", sessionHandler.GetSession)
-			r.Post("/{id}/join", sessionHandler.JoinSession)
-			r.Get("/{id}/check", sessionHandler.CheckSessionMembership)
-		})
-
-		r.Get("/api/users/{id}", userHandler.GetUser)
-
+		r.Get("/api/sessions", sessionHandler.GetSessions)
+		r.Post("/api/sessions", sessionHandler.CreateSession)
+		r.Post("/api/sessions/{id}/join", sessionHandler.JoinSession)
+		r.Get("/api/sessions/{id}/check", sessionHandler.CheckSessionMembership)
 	})
+
+	// User routes
+	r.Group(func(r chi.Router) {
+		r.Use(custommw.AuthMiddleware)
+		r.Get("/api/users/{id}", userHandler.GetUser)
+	})
+
+	// Avatar routes
+	r.Group(func(r chi.Router) {
+		r.Use(custommw.AuthMiddleware)
+		r.Post("/api/avatar", avatarHandler.UploadAvatar)
+	})
+
+	// WebSocket endpoint
+	r.Get("/ws", wsHandler.HandleWebSocket)
 
 	// Start server
 	port := cfg.Port

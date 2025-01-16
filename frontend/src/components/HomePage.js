@@ -6,10 +6,19 @@ import { authService } from '../services/auth';
 function HomePage() {
     const [sessions, setSessions] = useState([]);
     const [newSessionName, setNewSessionName] = useState('');
+    const [user, setUser] = useState(authService.getUser());
     const navigate = useNavigate();
 
     useEffect(() => {
         fetchSessions();
+        // Fetch latest user data
+        const fetchUserData = async () => {
+            const userData = await authService.fetchUserData();
+            if (userData) {
+                setUser(userData);
+            }
+        };
+        fetchUserData();
     }, []);
 
     const fetchSessions = async () => {
@@ -93,12 +102,31 @@ function HomePage() {
             <div className="max-w-4xl mx-auto">
                 <div className="flex justify-between items-center mb-8">
                     <h1 className="text-3xl font-bold text-gray-800">Chat Rooms</h1>
-                    <button
-                        onClick={handleLogout}
-                        className="px-4 py-2 bg-red-500 text-white rounded-md hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2"
-                    >
-                        Logout
-                    </button>
+                    <div className="flex items-center space-x-4">
+                        <button
+                            onClick={() => navigate('/profile')}
+                            className="flex items-center space-x-2 px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                        >
+                            {user?.avatarUrl ? (
+                                <img
+                                    src={user.avatarUrl}
+                                    alt="Profile"
+                                    className="w-6 h-6 rounded-full object-cover"
+                                />
+                            ) : (
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                                </svg>
+                            )}
+                            <span>Profile</span>
+                        </button>
+                        <button
+                            onClick={handleLogout}
+                            className="px-4 py-2 bg-red-500 text-white rounded-md hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2"
+                        >
+                            Logout
+                        </button>
+                    </div>
                 </div>
 
                 <div className="bg-white rounded-lg shadow-md p-6 mb-6">
