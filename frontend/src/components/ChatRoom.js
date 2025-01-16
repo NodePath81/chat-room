@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Box, VStack, Input, Button, Text, useToast } from '@chakra-ui/react';
+import { Box, VStack, Input, Button, Text, useToast, Flex } from '@chakra-ui/react';
 import WebSocketService from '../services/websocket';
 import SessionService from '../services/session';
 
@@ -12,6 +12,7 @@ function ChatRoom() {
     const [newMessage, setNewMessage] = useState('');
     const [isJoined, setIsJoined] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
+    const [users, setUsers] = useState({});
 
     useEffect(() => {
         async function checkAndJoinSession() {
@@ -37,10 +38,18 @@ function ChatRoom() {
             
             WebSocketService.onHistory((historyMessages) => {
                 setMessages(historyMessages);
+                // Extract unique user IDs from history messages
+                const userIds = [...new Set(historyMessages.map(msg => msg.userId))];
+                // Fetch usernames for all users
+                userIds.forEach(userId => fetchUsername(userId));
             });
 
             WebSocketService.onMessage((message) => {
                 setMessages(prev => [...prev, message]);
+                // Fetch username if not already known
+                if (!users[message.userId]) {
+                    fetchUsername(message.userId);
+                }
             });
         }
 
@@ -51,6 +60,25 @@ function ChatRoom() {
             setMessages([]);
         };
     }, [sessionId, navigate, toast]);
+
+    const fetchUsername = async (userId) => {
+        try {
+            const response = await fetch(`http://localhost:8080/api/users/${userId}`, {
+                headers: {
+                    'Authorization': `Bearer ${localStorage.getItem('token')}`
+                }
+            });
+            if (response.ok) {
+                const userData = await response.json();
+                setUsers(prev => ({
+                    ...prev,
+                    [userId]: userData.username
+                }));
+            }
+        } catch (error) {
+            console.error('Error fetching username:', error);
+        }
+    };
 
     const handleSend = () => {
         if (!isJoined) {
@@ -64,7 +92,6 @@ function ChatRoom() {
         }
 
         if (newMessage.trim()) {
-            // Convert sessionId to number when sending
             WebSocketService.sendMessage(newMessage, parseInt(sessionId, 10));
             setNewMessage('');
         }
@@ -83,13 +110,23 @@ function ChatRoom() {
             <VStack spacing={4} align="stretch" h="80vh">
                 <Box flex={1} overflowY="auto" borderWidth={1} p={4}>
                     {messages.map((msg, index) => (
-                        <Text key={index}>
-                            {msg.content}
-                        </Text>
+                        <Box 
+                            key={index}
+                            mb={2}
+                            p={2}
+                            bg="gray.50"
+                            borderRadius="md"
+                        >
+                            <Text fontWeight="bold" color="blue.600">
+                                {users[msg.userId] || 'Loading...'}
+                            </Text>
+                            <Text>{msg.content}</Text>
+                        </Box>
                     ))}
                 </Box>
-                <Box>
+                <Flex>
                     <Input
+                        flex={1}
                         value={newMessage}
                         onChange={(e) => setNewMessage(e.target.value)}
                         placeholder="Type a message..."
@@ -100,10 +137,11 @@ function ChatRoom() {
                         onClick={handleSend} 
                         ml={2}
                         isDisabled={!isJoined}
+                        colorScheme="blue"
                     >
                         Send
                     </Button>
-                </Box>
+                </Flex>
             </VStack>
         </Box>
     );

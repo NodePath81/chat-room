@@ -31,6 +31,7 @@ func main() {
 	authHandler := handlers.NewAuthHandler(db)
 	sessionHandler := handlers.NewSessionHandler(db)
 	wsHandler := handlers.NewWebSocketHandler(db)
+	userHandler := handlers.NewUserHandler(db)
 
 	// Setup router
 	r := chi.NewRouter()
@@ -61,6 +62,8 @@ func main() {
 			r.Post("/{id}/join", sessionHandler.JoinSession)
 			r.Get("/{id}/check", sessionHandler.CheckSessionMembership)
 		})
+
+		r.Get("/api/users/{id}", userHandler.GetUser)
 
 	})
 
