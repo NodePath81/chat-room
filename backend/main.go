@@ -73,6 +73,8 @@ func main() {
 	r.Group(func(r chi.Router) {
 		r.Use(custommw.AuthMiddleware)
 		r.Get("/api/users/{id}", userHandler.GetUser)
+		r.Put("/api/users/{id}/nickname", userHandler.UpdateNickname)
+		r.Put("/api/users/{id}/username", userHandler.UpdateUsername)
 	})
 
 	// Avatar routes
