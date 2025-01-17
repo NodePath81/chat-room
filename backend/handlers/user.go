@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"chat-room/auth"
 	"chat-room/models"
 
 	"github.com/go-chi/chi/v5"
@@ -25,6 +26,11 @@ type UpdateNicknameRequest struct {
 
 type UpdateUsernameRequest struct {
 	Username string `json:"username"`
+}
+
+type UserSessionResponse struct {
+	SessionID uint   `json:"session_id"`
+	Role      string `json:"role"`
 }
 
 func (h *UserHandler) GetUser(w http.ResponseWriter, r *http.Request) {
@@ -162,4 +168,35 @@ func (h *UserHandler) UpdateNickname(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{"message": "Nickname updated successfully"})
+}
+
+func (h *UserHandler) GetUserSessions(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	userID := auth.GetUserIDFromContext(r)
+
+	// Get all sessions where user is a member
+	var sessions []models.Session
+	if err := h.db.
+		Preload("Users").
+		Joins("JOIN user_sessions ON user_sessions.session_id = sessions.id").
+		Where("user_sessions.user_id = ?", userID).
+		Find(&sessions).Error; err != nil {
+		http.Error(w, "Error fetching sessions", http.StatusInternalServerError)
+		return
+	}
+
+	// Build response with session IDs and roles
+	response := make([]UserSessionResponse, 0, len(sessions))
+	for _, session := range sessions {
+		role := "member"
+		if session.CreatorID == userID {
+			role = "creator"
+		}
+		response = append(response, UserSessionResponse{
+			SessionID: session.ID,
+			Role:      role,
+		})
+	}
+
+	json.NewEncoder(w).Encode(response)
 }

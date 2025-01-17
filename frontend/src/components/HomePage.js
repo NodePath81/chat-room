@@ -1,17 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import SessionService from '../services/session';
 import { authService } from '../services/auth';
+import { API_ENDPOINTS } from '../services/api';
+import SessionService from '../services/session';
 
 function HomePage() {
     const [sessions, setSessions] = useState([]);
+    const [userSessions, setUserSessions] = useState([]);
     const [newSessionName, setNewSessionName] = useState('');
     const [user, setUser] = useState(authService.getUser());
     const navigate = useNavigate();
 
     useEffect(() => {
         fetchSessions();
-        // Fetch latest user data
+        fetchUserSessions();
         const fetchUserData = async () => {
             const userData = await authService.fetchUserData();
             if (userData) {
@@ -21,27 +23,35 @@ function HomePage() {
         fetchUserData();
     }, []);
 
+    const fetchUserSessions = async () => {
+        try {
+            const response = await fetch(API_ENDPOINTS.USERS.GET_SESSIONS, {
+                headers: {
+                    'Authorization': `Bearer ${authService.getToken()}`
+                }
+            });
+            if (!response.ok) {
+                throw new Error('Failed to fetch user sessions');
+            }
+            const data = await response.json();
+            setUserSessions(data);
+        } catch (error) {
+            console.error('Error fetching user sessions:', error);
+        }
+    };
+
     const fetchSessions = async () => {
         try {
-            const token = localStorage.getItem('token');
-            const response = await fetch('http://localhost:8080/api/sessions', {
+            const response = await fetch(API_ENDPOINTS.SESSIONS.LIST, {
                 headers: {
-                    'Authorization': `Bearer ${token}`
+                    'Authorization': `Bearer ${authService.getToken()}`
                 }
             });
             if (!response.ok) {
                 throw new Error('Failed to fetch sessions');
             }
             const data = await response.json();
-            const mappedSessions = data.map(session => ({
-                id: session.ID,
-                name: session.name,
-                users: session.Users?.map(user => ({
-                    id: user.ID,
-                    username: user.Username
-                })) || []
-            }));
-            setSessions(mappedSessions);
+            setSessions(data);
         } catch (error) {
             console.error('Fetch error:', error);
         }
@@ -51,11 +61,10 @@ function HomePage() {
         if (!newSessionName.trim()) return;
 
         try {
-            const token = localStorage.getItem('token');
-            const response = await fetch('http://localhost:8080/api/sessions', {
+            const response = await fetch(API_ENDPOINTS.SESSIONS.CREATE, {
                 method: 'POST',
                 headers: {
-                    'Authorization': `Bearer ${token}`,
+                    'Authorization': `Bearer ${authService.getToken()}`,
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({ name: newSessionName })
@@ -68,6 +77,7 @@ function HomePage() {
             const newSession = await response.json();
             setNewSessionName('');
             await fetchSessions();
+            await fetchUserSessions();
             
             if (newSession && newSession.ID) {
                 await handleJoinSession(newSession.ID);
@@ -92,84 +102,83 @@ function HomePage() {
         }
     };
 
-    const handleLogout = () => {
-        authService.logout();
-        navigate('/login');
+    const getUserSessionRole = (sessionId) => {
+        const userSession = userSessions.find(s => s.session_id === sessionId);
+        return userSession ? userSession.role : null;
     };
 
     return (
-        <div className="min-h-screen bg-gray-100 p-6">
-            <div className="max-w-4xl mx-auto">
-                <div className="flex justify-between items-center mb-8">
-                    <h1 className="text-3xl font-bold text-gray-800">Chat Rooms</h1>
-                    <div className="flex items-center space-x-4">
-                        <button
-                            onClick={() => navigate('/profile')}
-                            className="flex items-center space-x-2 px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-                        >
-                            {user?.avatarUrl ? (
-                                <img
-                                    src={user.avatarUrl}
-                                    alt="Profile"
-                                    className="w-6 h-6 rounded-full object-cover"
-                                />
-                            ) : (
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                                </svg>
-                            )}
-                            <span>Profile</span>
-                        </button>
-                        <button
-                            onClick={handleLogout}
-                            className="px-4 py-2 bg-red-500 text-white rounded-md hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2"
-                        >
-                            Logout
-                        </button>
-                    </div>
-                </div>
-
-                <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-                    <div className="flex gap-4">
-                        <input
-                            type="text"
-                            value={newSessionName}
-                            onChange={(e) => setNewSessionName(e.target.value)}
-                            placeholder="New session name"
-                            className="flex-1 px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        />
-                        <button
-                            onClick={createSession}
-                            className="px-6 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-                        >
-                            Create Session
-                        </button>
-                    </div>
-                </div>
-
-                <div className="bg-white rounded-lg shadow-md p-6">
-                    <h2 className="text-xl font-semibold mb-4">Available Sessions</h2>
-                    <div className="space-y-3">
-                        {sessions.length > 0 ? (
-                            sessions.map(session => (
-                                <div
-                                    key={`session-${session.id}`}
-                                    className="flex justify-between items-center p-4 bg-gray-50 rounded-md hover:bg-gray-100"
-                                >
-                                    <span className="text-gray-700">{session.name}</span>
-                                    <button
-                                        onClick={() => session.id && handleJoinSession(session.id)}
-                                        className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-                                        disabled={!session.id}
-                                    >
-                                        Join Chat
-                                    </button>
-                                </div>
-                            ))
+        <div className="container mx-auto px-4 py-8">
+            <div className="flex justify-between items-center mb-8">
+                <h1 className="text-3xl font-bold">Chat Rooms</h1>
+                <div className="flex space-x-4">
+                    <button
+                        onClick={() => navigate('/profile')}
+                        className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                    >
+                        {user?.avatarUrl ? (
+                            <img
+                                src={user.avatarUrl}
+                                alt="Profile"
+                                className="w-6 h-6 rounded-full object-cover"
+                            />
                         ) : (
-                            <p className="text-gray-500 text-center py-4">No sessions available</p>
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                            </svg>
                         )}
-                    </div>
+                    </button>
+                </div>
+            </div>
+
+            <div className="mb-8">
+                <h2 className="text-xl font-semibold mb-4">Your Sessions</h2>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {sessions.filter(session => userSessions.some(us => us.session_id === session.ID)).map(session => (
+                        <div key={session.ID} className="bg-white rounded-lg shadow-md p-4">
+                            <div className="flex justify-between items-center mb-2">
+                                <h3 className="text-lg font-medium">{session.name}</h3>
+                                {getUserSessionRole(session.ID) === 'creator' && (
+                                    <button
+                                        onClick={() => navigate(`/sessions/${session.ID}/manage`)}
+                                        className="text-gray-600 hover:text-gray-800"
+                                    >
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                            <path fillRule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clipRule="evenodd" />
+                                        </svg>
+                                    </button>
+                                )}
+                            </div>
+                            <p className="text-sm text-gray-600 mb-4">
+                                {session.Users?.length || 0} members
+                            </p>
+                            <button
+                                onClick={() => handleJoinSession(session.ID)}
+                                className="w-full px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                            >
+                                Enter Chat
+                            </button>
+                        </div>
+                    ))}
+                </div>
+            </div>
+
+            <div className="mb-8">
+                <h2 className="text-xl font-semibold mb-4">Create New Session</h2>
+                <div className="flex gap-4">
+                    <input
+                        type="text"
+                        value={newSessionName}
+                        onChange={(e) => setNewSessionName(e.target.value)}
+                        placeholder="Enter session name"
+                        className="flex-1 px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    />
+                    <button
+                        onClick={createSession}
+                        className="px-6 py-2 bg-green-500 text-white rounded-md hover:bg-green-600 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2"
+                    >
+                        Create
+                    </button>
                 </div>
             </div>
         </div>

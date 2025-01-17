@@ -1,17 +1,16 @@
-import { API_ENDPOINTS } from '../config';
+import { API_ENDPOINTS } from './api';
+import { authService } from './auth';
 
 class SessionService {
     async joinSession(sessionId) {
-        const token = localStorage.getItem('token');
-        if (!token) return false;
-
         try {
-            const response = await fetch(API_ENDPOINTS.SESSIONS.JOIN(sessionId), {
-                method: 'POST',
+            const response = await fetch(API_ENDPOINTS.SESSIONS.JOIN, {
+                method: 'GET',
                 headers: {
-                    'Authorization': `Bearer ${token}`,
+                    'Authorization': `Bearer ${authService.getToken()}`,
                     'Content-Type': 'application/json'
-                }
+                },
+                body: JSON.stringify({ session_id: sessionId })
             });
 
             if (!response.ok) {
@@ -26,13 +25,10 @@ class SessionService {
     }
 
     async checkSessionMembership(sessionId) {
-        const token = localStorage.getItem('token');
-        if (!token) return false;
-
         try {
-            const response = await fetch(API_ENDPOINTS.SESSIONS.CHECK(sessionId), {
+            const response = await fetch(API_ENDPOINTS.SESSIONS.CHECK_MEMBERSHIP(sessionId), {
                 headers: {
-                    'Authorization': `Bearer ${token}`
+                    'Authorization': `Bearer ${authService.getToken()}`
                 }
             });
 

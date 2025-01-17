@@ -80,6 +80,7 @@ func main() {
 	r.Group(func(r chi.Router) {
 		r.Use(custommw.AuthMiddleware)
 		r.Get("/api/users/{id}", userHandler.GetUser)
+		r.Get("/api/users/sessions", userHandler.GetUserSessions)
 		r.Put("/api/users/{id}/nickname", userHandler.UpdateNickname)
 		r.Put("/api/users/{id}/username", userHandler.UpdateUsername)
 	})

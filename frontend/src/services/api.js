@@ -12,12 +12,19 @@ export const API_ENDPOINTS = {
         GET: (id) => `${API_BASE_URL}/api/users/${id}`,
         UPDATE_NICKNAME: (id) => `${API_BASE_URL}/api/users/${id}/nickname`,
         UPDATE_USERNAME: (id) => `${API_BASE_URL}/api/users/${id}/username`,
+        GET_SESSIONS: `${API_BASE_URL}/api/users/sessions`,
     },
     SESSIONS: {
         LIST: `${API_BASE_URL}/api/sessions`,
         CREATE: `${API_BASE_URL}/api/sessions`,
-        JOIN: (id) => `${API_BASE_URL}/api/sessions/${id}/join`,
-        LEAVE: (id) => `${API_BASE_URL}/api/sessions/${id}/leave`,
+        GET: (id) => `${API_BASE_URL}/api/sessions/${id}`,
+        JOIN: `${API_BASE_URL}/api/sessions/join`,
+        CHECK_MEMBERSHIP: (id) => `${API_BASE_URL}/api/sessions/${id}`,
+        CHECK_ROLE: (id) => `${API_BASE_URL}/api/sessions/${id}/role`,
+        GET_MEMBERS: (id) => `${API_BASE_URL}/api/sessions/${id}/members`,
+        KICK_MEMBER: (id) => `${API_BASE_URL}/api/sessions/${id}/kick`,
+        REMOVE: (id) => `${API_BASE_URL}/api/sessions/${id}/remove`,
+        CREATE_SHARE_LINK: (id) => `${API_BASE_URL}/api/sessions/${id}/share`
     },
     AVATAR: {
         UPLOAD: `${API_BASE_URL}/api/avatar`,

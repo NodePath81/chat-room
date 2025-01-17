@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, Link, useLocation } from 'react-router-dom';
 import { authService } from '../services/auth';
 import { API_ENDPOINTS } from '../services/api';
 
 const LoginPage = () => {
     const navigate = useNavigate();
+    const location = useLocation();
     const [formData, setFormData] = useState({
         username: '',
         password: ''
@@ -29,7 +30,8 @@ const LoginPage = () => {
             if (response.ok && data.token && data.user) {
                 authService.setToken(data.token);
                 authService.setUser(data.user);
-                navigate('/home');
+                const returnTo = location.state?.returnTo || '/';
+                navigate(returnTo);
             } else {
                 setError(data.message || 'Login failed');
             }
