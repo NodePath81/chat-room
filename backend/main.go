@@ -11,7 +11,7 @@ import (
 	"chat-room/s3"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
+	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
 )
 
@@ -45,8 +45,8 @@ func main() {
 	r := chi.NewRouter()
 
 	// Middleware
-	r.Use(middleware.Logger)
-	r.Use(middleware.Recoverer)
+	r.Use(chimiddleware.Logger)
+	r.Use(chimiddleware.Recoverer)
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   []string{"http://localhost:3000"},
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
@@ -61,12 +61,19 @@ func main() {
 	r.Get("/api/auth/check-nickname", authHandler.CheckNicknameAvailability)
 
 	// Session routes
-	r.Group(func(r chi.Router) {
+	r.Route("/api/sessions", func(r chi.Router) {
 		r.Use(custommw.AuthMiddleware)
-		r.Get("/api/sessions", sessionHandler.GetSessions)
-		r.Post("/api/sessions", sessionHandler.CreateSession)
-		r.Post("/api/sessions/{id}/join", sessionHandler.JoinSession)
-		r.Get("/api/sessions/{id}/check", sessionHandler.CheckSessionMembership)
+		r.Get("/", sessionHandler.GetSessions)
+		r.Post("/", sessionHandler.CreateSession)
+		r.Get("/join", sessionHandler.JoinSession)
+		r.Route("/{id}", func(r chi.Router) {
+			r.Get("/", sessionHandler.GetSession)
+			r.Get("/role", sessionHandler.CheckRole)
+			r.Get("/members", sessionHandler.ListMembers)
+			r.Get("/kick", sessionHandler.KickMember)
+			r.Get("/remove", sessionHandler.RemoveSession)
+			r.Post("/share", sessionHandler.CreateShareLink)
+		})
 	})
 
 	// User routes
