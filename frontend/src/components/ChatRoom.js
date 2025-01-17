@@ -28,13 +28,13 @@ function ChatRoom() {
                     setUsers(prev => ({
                         ...prev,
                         [userId]: {
-                            username: userData.username,
+                            nickname: userData.nickname,
                             avatarUrl: userData.avatarUrl
                         }
                     }));
                 }
             } catch (error) {
-                console.error('Error fetching username:', error);
+                console.error('Error fetching user data:', error);
             }
         };
 
@@ -116,13 +116,13 @@ function ChatRoom() {
                                 {users[msg.userId]?.avatarUrl ? (
                                     <img
                                         src={users[msg.userId].avatarUrl}
-                                        alt={`${users[msg.userId]?.username || 'User'}'s avatar`}
+                                        alt={`${users[msg.userId]?.nickname || 'User'}'s avatar`}
                                         className="w-10 h-10 rounded-full object-cover"
                                     />
                                 ) : (
                                     <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
                                         <span className="text-blue-600 font-semibold text-lg">
-                                            {(users[msg.userId]?.username || 'U')[0].toUpperCase()}
+                                            {(users[msg.userId]?.nickname || 'U')[0].toUpperCase()}
                                         </span>
                                     </div>
                                 )}
@@ -130,7 +130,7 @@ function ChatRoom() {
                             <div className="flex-1">
                                 <div className="flex justify-between items-center">
                                     <div className="font-semibold text-blue-600">
-                                        {users[msg.userId]?.username || 'Loading...'}
+                                        {users[msg.userId]?.nickname || 'Loading...'}
                                     </div>
                                     <div className="text-xs text-gray-500">
                                         {new Date(msg.timestamp).toLocaleString()}

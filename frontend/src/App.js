@@ -1,51 +1,26 @@
 import React from 'react';
-import { ChakraProvider, Box } from '@chakra-ui/react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import ChatRoom from './components/ChatRoom';
-import HomePage from './components/HomePage';
 import LoginPage from './components/LoginPage';
+import RegisterPage from './components/RegisterPage';
+import HomePage from './components/HomePage';
+import ChatRoom from './components/ChatRoom';
 import UserPage from './components/UserPage';
-import { authService } from './services/auth';
-
-function PrivateRoute({ children }) {
-  return authService.isAuthenticated() ? children : <Navigate to="/login" />;
-}
+import { AuthProvider } from './context/AuthContext';
 
 function App() {
   return (
-    <ChakraProvider>
+    <AuthProvider>
       <Router>
-        <Box minH="100vh" bg="gray.100">
-          <Routes>
-            <Route path="/login" element={<LoginPage />} />
-            <Route
-              path="/"
-              element={
-                <PrivateRoute>
-                  <HomePage />
-                </PrivateRoute>
-              }
-            />
-            <Route
-              path="/chat/:sessionId"
-              element={
-                <PrivateRoute>
-                  <ChatRoom />
-                </PrivateRoute>
-              }
-            />
-            <Route
-              path="/profile"
-              element={
-                <PrivateRoute>
-                  <UserPage />
-                </PrivateRoute>
-              }
-            />
-          </Routes>
-        </Box>
+        <Routes>
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/register" element={<RegisterPage />} />
+          <Route path="/home" element={<HomePage />} />
+          <Route path="/chat/:sessionId" element={<ChatRoom />} />
+          <Route path="/profile" element={<UserPage />} />
+          <Route path="/" element={<Navigate to="/login" replace />} />
+        </Routes>
       </Router>
-    </ChakraProvider>
+    </AuthProvider>
   );
 }
 

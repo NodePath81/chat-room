@@ -57,6 +57,8 @@ func main() {
 	// Routes
 	r.Post("/api/auth/register", authHandler.Register)
 	r.Post("/api/auth/login", authHandler.Login)
+	r.Get("/api/auth/check-username", authHandler.CheckUsernameAvailability)
+	r.Get("/api/auth/check-nickname", authHandler.CheckNicknameAvailability)
 
 	// Session routes
 	r.Group(func(r chi.Router) {

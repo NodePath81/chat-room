@@ -1,67 +1,62 @@
-import { API_ENDPOINTS } from '../config';
+import { API_ENDPOINTS } from './api';
 
-export const authService = {
-  async register(username, password) {
-    const response = await fetch(API_ENDPOINTS.AUTH.REGISTER, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ username, password }),
-    });
-    if (!response.ok) {
-      throw new Error('Registration failed');
+class AuthService {
+  setToken(token) {
+    if (!token) {
+      console.warn('Attempted to set null/undefined token');
+      return;
     }
-  },
-
-  async login(username, password) {
-    const response = await fetch(API_ENDPOINTS.AUTH.LOGIN, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ username, password }),
-    });
-    if (!response.ok) {
-      throw new Error('Login failed');
-    }
-    const data = await response.json();
-    localStorage.setItem('token', data.token);
-    localStorage.setItem('user', JSON.stringify(data.user));
-
-    // Fetch latest user data including avatar URL
-    await this.fetchUserData();
-    return data;
-  },
-
-  logout() {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
-  },
+    console.log('Setting token:', token);
+    localStorage.setItem('token', token);
+  }
 
   getToken() {
     return localStorage.getItem('token');
-  },
+  }
+
+  setUser(user) {
+    if (!user) {
+      console.warn('Attempted to set null/undefined user');
+      return;
+    }
+    console.log('Setting user:', user);
+    localStorage.setItem('user', JSON.stringify(user));
+  }
 
   getUser() {
-    const user = localStorage.getItem('user');
-    return user ? JSON.parse(user) : null;
-  },
+    const userStr = localStorage.getItem('user');
+    if (!userStr) return null;
+    try {
+      return JSON.parse(userStr);
+    } catch (error) {
+      console.error('Error parsing user data:', error);
+      return null;
+    }
+  }
+
+  clearToken() {
+    localStorage.removeItem('token');
+  }
+
+  clearUser() {
+    localStorage.removeItem('user');
+  }
 
   isAuthenticated() {
     return !!this.getToken();
-  },
+  }
 
-  updateStoredUser(userData) {
-    localStorage.setItem('user', JSON.stringify(userData));
-  },
+  logout() {
+    this.clearToken();
+    this.clearUser();
+  }
 
   async fetchUserData() {
     const user = this.getUser();
     if (!user) return null;
 
     try {
-      const response = await fetch(`${API_ENDPOINTS.USERS.GET(user.id)}`, {
+      const response = await fetch(API_ENDPOINTS.USERS.GET(user.id), {
         headers: {
           'Authorization': `Bearer ${this.getToken()}`
         }
@@ -72,11 +67,21 @@ export const authService = {
       }
 
       const userData = await response.json();
-      this.updateStoredUser(userData);
+      this.setUser(userData);
       return userData;
     } catch (error) {
       console.error('Error fetching user data:', error);
       return null;
     }
   }
-}; 
+
+  updateStoredUser(userData) {
+    if (!userData) {
+      console.warn('Attempted to update with null/undefined user data');
+      return;
+    }
+    this.setUser(userData);
+  }
+}
+
+export const authService = new AuthService(); 
