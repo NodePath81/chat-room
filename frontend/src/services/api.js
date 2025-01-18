@@ -25,7 +25,13 @@ export const API_ENDPOINTS = {
         KICK_MEMBER: (id) => `${API_BASE_URL}/api/sessions/${id}/kick`,
         REMOVE: (id) => `${API_BASE_URL}/api/sessions/${id}/remove`,
         CREATE_SHARE_LINK: (id) => `${API_BASE_URL}/api/sessions/${id}/share`,
-        GET_SHARE_INFO: `${API_BASE_URL}/api/sessions/share/info`
+        GET_SHARE_INFO: `${API_BASE_URL}/api/sessions/share/info`,
+        GET_MESSAGES: (id, params) => {
+            const url = new URL(`${API_BASE_URL}/api/sessions/${id}/messages`);
+            if (params?.before) url.searchParams.set('before', params.before);
+            if (params?.limit) url.searchParams.set('limit', params.limit);
+            return url.toString();
+        }
     },
     AVATAR: {
         UPLOAD: `${API_BASE_URL}/api/avatar`,

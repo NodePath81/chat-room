@@ -2,7 +2,7 @@ import { API_ENDPOINTS } from '../config';
 
 export class WebSocketService {
   constructor() {
-    this.connections = new Map(); // sessionId -> { ws, messageHandlers, historyHandlers, reconnectAttempts, shouldReconnect }
+    this.connections = new Map(); // sessionId -> { ws, messageHandlers, reconnectAttempts, shouldReconnect }
     this.maxReconnectAttempts = 5;
   }
 
@@ -15,7 +15,6 @@ export class WebSocketService {
     const connection = {
       ws: null,
       messageHandlers: [],
-      historyHandlers: [],
       reconnectAttempts: 0,
       shouldReconnect: true
     };
@@ -34,15 +33,7 @@ export class WebSocketService {
 
       connection.ws.onmessage = (event) => {
         const data = JSON.parse(event.data);
-        if (data.type === 'history') {
-          // Sort messages by timestamp
-          const sortedMessages = data.messages.sort((a, b) => 
-            new Date(a.timestamp) - new Date(b.timestamp)
-          );
-          connection.historyHandlers.forEach(handler => handler(sortedMessages));
-        } else {
-          connection.messageHandlers.forEach(handler => handler(data));
-        }
+        connection.messageHandlers.forEach(handler => handler(data));
       };
 
       connection.ws.onclose = () => {
@@ -102,18 +93,10 @@ export class WebSocketService {
     }
   }
 
-  onHistory(handler, sessionId) {
-    const connection = this.connections.get(sessionId);
-    if (connection) {
-      connection.historyHandlers.push(handler);
-    }
-  }
-
   removeHandlers(sessionId) {
     const connection = this.connections.get(sessionId);
     if (connection) {
       connection.messageHandlers = [];
-      connection.historyHandlers = [];
     }
   }
 }

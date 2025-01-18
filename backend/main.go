@@ -74,6 +74,7 @@ func main() {
 			r.Get("/kick", sessionHandler.KickMember)
 			r.Get("/remove", sessionHandler.RemoveSession)
 			r.Post("/share", sessionHandler.CreateShareLink)
+			r.Get("/messages", sessionHandler.GetMessages)
 		})
 	})
 

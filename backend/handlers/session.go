@@ -417,3 +417,74 @@ func (h *SessionHandler) GetShareInfo(w http.ResponseWriter, r *http.Request) {
 
 	json.NewEncoder(w).Encode(response)
 }
+
+type MessageResponse struct {
+	ID        uint      `json:"id"`
+	Content   string    `json:"content"`
+	UserID    uint      `json:"userId"`
+	CreatedAt time.Time `json:"timestamp"`
+}
+
+type GetMessagesResponse struct {
+	Messages []MessageResponse `json:"messages"`
+	HasMore  bool              `json:"hasMore"`
+}
+
+func (h *SessionHandler) GetMessages(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	sessionID := chi.URLParam(r, "id")
+
+	// Parse pagination parameters
+	limit := 50 // Default limit
+	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
+		if parsedLimit, err := strconv.Atoi(limitStr); err == nil && parsedLimit > 0 {
+			limit = parsedLimit
+		}
+	}
+	if limit > 100 { // Maximum limit
+		limit = 100
+	}
+
+	var beforeID uint
+	if beforeStr := r.URL.Query().Get("before"); beforeStr != "" {
+		if parsedBefore, err := strconv.ParseUint(beforeStr, 10, 32); err == nil {
+			beforeID = uint(parsedBefore)
+		}
+	}
+
+	// Build query
+	query := h.db.Model(&models.Message{}).Where("session_id = ?", sessionID)
+	if beforeID > 0 {
+		query = query.Where("id < ?", beforeID)
+	}
+
+	// Get messages
+	var messages []models.Message
+	if err := query.Order("id desc").Limit(limit + 1).Find(&messages).Error; err != nil {
+		http.Error(w, "Error fetching messages", http.StatusInternalServerError)
+		return
+	}
+
+	// Check if there are more messages
+	hasMore := len(messages) > limit
+	if hasMore {
+		messages = messages[:limit]
+	}
+
+	// Convert to response format
+	response := GetMessagesResponse{
+		Messages: make([]MessageResponse, len(messages)),
+		HasMore:  hasMore,
+	}
+
+	for i, msg := range messages {
+		response.Messages[i] = MessageResponse{
+			ID:        msg.ID,
+			Content:   msg.Content,
+			UserID:    msg.UserID,
+			CreatedAt: msg.CreatedAt,
+		}
+	}
+
+	json.NewEncoder(w).Encode(response)
+}
