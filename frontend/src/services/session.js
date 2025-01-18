@@ -2,15 +2,12 @@ import { API_ENDPOINTS } from './api';
 import { authService } from './auth';
 
 class SessionService {
-    async joinSession(sessionId) {
+    async joinSession(token) {
         try {
-            const response = await fetch(API_ENDPOINTS.SESSIONS.JOIN, {
-                method: 'GET',
+            const response = await fetch(API_ENDPOINTS.SESSIONS.JOIN(token), {
                 headers: {
-                    'Authorization': `Bearer ${authService.getToken()}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ session_id: sessionId })
+                    'Authorization': `Bearer ${authService.getToken()}`
+                }
             });
 
             if (!response.ok) {
@@ -24,18 +21,23 @@ class SessionService {
         }
     }
 
-    async checkSessionMembership(sessionId) {
+    async checkSessionRole(sessionId) {
         try {
-            const response = await fetch(API_ENDPOINTS.SESSIONS.CHECK_MEMBERSHIP(sessionId), {
+            const response = await fetch(API_ENDPOINTS.SESSIONS.CHECK_ROLE(sessionId), {
                 headers: {
                     'Authorization': `Bearer ${authService.getToken()}`
                 }
             });
 
-            return response.ok;
+            if (!response.ok) {
+                return null;
+            }
+
+            const data = await response.json();
+            return data.role;
         } catch (error) {
-            console.error('Error checking session membership:', error);
-            return false;
+            console.error('Error checking session role:', error);
+            return null;
         }
     }
 }

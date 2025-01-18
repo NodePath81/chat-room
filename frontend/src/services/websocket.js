@@ -79,17 +79,29 @@ export class WebSocketService {
     }
   }
 
-  sendMessage(content, sessionId) {
-    const connection = this.connections.get(sessionId);
+  sendMessage(message) {
+    console.log('Sending message:', message);
+    const connection = this.connections.get(message.sessionId);
     if (connection && connection.ws && connection.ws.readyState === WebSocket.OPEN) {
-      connection.ws.send(JSON.stringify({ content }));
+      console.log('Connection found and ready, sending message');
+      connection.ws.send(JSON.stringify(message));
+    } else {
+      console.error('Failed to send message:', {
+        hasConnection: !!connection,
+        hasWs: connection?.ws ? 'yes' : 'no',
+        readyState: connection?.ws?.readyState,
+        expectedState: WebSocket.OPEN
+      });
     }
   }
 
   onMessage(handler, sessionId) {
+    console.log('Registering message handler for session:', sessionId);
     const connection = this.connections.get(sessionId);
     if (connection) {
       connection.messageHandlers.push(handler);
+    } else {
+      console.error('No connection found for session:', sessionId);
     }
   }
 

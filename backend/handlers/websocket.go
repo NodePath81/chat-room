@@ -32,6 +32,8 @@ type Message struct {
 	Content   string    `json:"content"`
 	CreatedAt time.Time `json:"timestamp"`
 	SessionID uint      `json:"sessionId"`
+	Type      string    `json:"type"`
+	MsgType   string    `json:"msgType"`
 }
 
 type SessionClients struct {
@@ -115,17 +117,34 @@ func (h *WebSocketHandler) HandleWebSocket(w http.ResponseWriter, r *http.Reques
 		for {
 			var msg struct {
 				Content string `json:"content"`
+				Type    string `json:"type"`
+				MsgType string `json:"msgType"`
 			}
 			if err := conn.ReadJSON(&msg); err != nil {
+				log.Printf("Error reading message: %v", err)
 				return
 			}
+
+			log.Printf("Received message: %+v", msg)
 
 			message := Message{
 				UserID:    claims.UserID,
 				Content:   msg.Content,
 				CreatedAt: time.Now().UTC(),
 				SessionID: uint(sessionID),
+				Type:      msg.Type,
+				MsgType:   msg.MsgType,
 			}
+
+			// Set default type if not specified
+			if message.Type == "" {
+				message.Type = "message"
+			}
+			if message.MsgType == "" {
+				message.MsgType = "text"
+			}
+
+			log.Printf("Processing message: %+v", message)
 
 			// Save message to database
 			if err := h.SaveMessage(uint(sessionID), message); err != nil {
@@ -133,6 +152,7 @@ func (h *WebSocketHandler) HandleWebSocket(w http.ResponseWriter, r *http.Reques
 				continue
 			}
 
+			log.Printf("Broadcasting message to session %d", sessionID)
 			// Broadcast message
 			h.broadcast(uint(sessionID), message)
 		}
@@ -180,6 +200,11 @@ func (h *WebSocketHandler) broadcast(sessionID uint, message Message) {
 	sessionClients := sessionClientsInterface.(*SessionClients)
 	sessionClients.mu.RLock()
 	defer sessionClients.mu.RUnlock()
+
+	// Set default message type if not specified
+	if message.Type == "" {
+		message.Type = "message"
+	}
 
 	// Broadcast to all clients in the session
 	for _, clients := range sessionClients.Clients {

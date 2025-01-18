@@ -16,6 +16,8 @@ function ChatRoom() {
     const [hasMore, setHasMore] = useState(true);
     const [users, setUsers] = useState({});
     const [userRole, setUserRole] = useState(null);
+    const [selectedImage, setSelectedImage] = useState(null);
+    const [imagePreview, setImagePreview] = useState(null);
     const messagesEndRef = useRef(null);
     const messageListRef = useRef(null);
     const [showUpdateZone, setShowUpdateZone] = useState(false);
@@ -166,77 +168,68 @@ function ChatRoom() {
     useEffect(() => {
         const currentSessionId = parseInt(sessionId, 10);
 
-        const checkUserRole = async () => {
-            try {
-                const response = await fetch(API_ENDPOINTS.SESSIONS.CHECK_ROLE(currentSessionId), {
-                    headers: {
-                        'Authorization': `Bearer ${authService.getToken()}`
-                    }
-                });
-                if (response.ok) {
-                    const data = await response.json();
-                    setUserRole(data.role);
-                }
-            } catch (error) {
-                console.error('Error checking user role:', error);
-            }
-        };
-
-        async function checkAndJoinSession() {
+        async function initializeChat() {
             setIsLoading(true);
-            const isMember = await SessionService.checkSessionMembership(currentSessionId);
-            
-            if (!isMember) {
-                navigate('/');
-                return;
-            }
-            
-            await checkUserRole();
-            setIsJoined(true);
-            
-            // Load initial messages
-            await loadMessages();
-
-            // Ensure we're at the bottom after initial load
-            setTimeout(() => {
-                if (messageListRef.current) {
-                    messageListRef.current.scrollTop = messageListRef.current.scrollHeight;
-                    lastScrollTopRef.current = messageListRef.current.scrollTop;
+            try {
+                // Check user role, which also verifies session membership
+                const role = await SessionService.checkSessionRole(currentSessionId);
+                if (role === null) {
+                    // User is not a member or session doesn't exist
+                    navigate('/');
+                    return;
                 }
-            }, 100);
-            
-            WebSocketService.connect(currentSessionId);
-            
-            WebSocketService.onMessage((message) => {
-                // Store the current scroll position and the height before adding new message
-                const scrollPos = messageListRef.current?.scrollTop || 0;
-                const oldHeight = messageListRef.current?.scrollHeight || 0;
+                
+                setUserRole(role);
+                setIsJoined(true);
+                
+                // Load initial messages
+                await loadMessages();
 
-                setMessages(prev => [...prev, message]);
-                if (message.userId) {
-                    fetchUsername(message.userId);
-                }
-
-                // After state update, adjust scroll position if user was not at bottom
-                requestAnimationFrame(() => {
+                // Ensure we're at the bottom after initial load
+                setTimeout(() => {
                     if (messageListRef.current) {
-                        const newHeight = messageListRef.current.scrollHeight;
-                        const isAtBottom = (scrollPos + messageListRef.current.clientHeight + 100) >= oldHeight;
-                        
-                        if (isAtBottom) {
-                            scrollToBottom();
-                        } else {
-                            // Maintain relative scroll position
-                            messageListRef.current.scrollTop = scrollPos + (newHeight - oldHeight);
-                        }
+                        messageListRef.current.scrollTop = messageListRef.current.scrollHeight;
+                        lastScrollTopRef.current = messageListRef.current.scrollTop;
                     }
-                });
-            }, currentSessionId);
+                }, 100);
+                
+                // Connect WebSocket after confirming membership
+                WebSocketService.connect(currentSessionId);
+                
+                WebSocketService.onMessage((message) => {
+                    // Store the current scroll position and the height before adding new message
+                    const scrollPos = messageListRef.current?.scrollTop || 0;
+                    const oldHeight = messageListRef.current?.scrollHeight || 0;
 
-            setIsLoading(false);
+                    setMessages(prev => [...prev, message]);
+                    if (message.userId) {
+                        fetchUsername(message.userId);
+                    }
+
+                    // After state update, adjust scroll position if user was not at bottom
+                    requestAnimationFrame(() => {
+                        if (messageListRef.current) {
+                            const newHeight = messageListRef.current.scrollHeight;
+                            const isAtBottom = (scrollPos + messageListRef.current.clientHeight + 100) >= oldHeight;
+                            
+                            if (isAtBottom) {
+                                scrollToBottom();
+                            } else {
+                                // Maintain relative scroll position
+                                messageListRef.current.scrollTop = scrollPos + (newHeight - oldHeight);
+                            }
+                        }
+                    });
+                }, currentSessionId);
+            } catch (error) {
+                console.error('Error initializing chat:', error);
+                navigate('/');
+            } finally {
+                setIsLoading(false);
+            }
         }
 
-        checkAndJoinSession();
+        initializeChat();
 
         return () => {
             WebSocketService.removeHandlers(currentSessionId);
@@ -247,13 +240,162 @@ function ChatRoom() {
         };
     }, [sessionId, navigate]);
 
-    const handleSend = () => {
-        if (!isJoined || !newMessage.trim()) return;
+    const handleImageUpload = async (event) => {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        // Check file type
+        if (!file.type.startsWith('image/')) {
+            alert('Please select an image file');
+            return;
+        }
+
+        // Check file size (max 5MB)
+        if (file.size > 5 * 1024 * 1024) {
+            alert('Image size should be less than 5MB');
+            return;
+        }
+
+        setSelectedImage(file);
         
-        const currentSessionId = parseInt(sessionId, 10);
-        WebSocketService.sendMessage(newMessage, currentSessionId);
-        setNewMessage('');
+        // Create preview URL
+        const previewUrl = URL.createObjectURL(file);
+        setImagePreview(previewUrl);
     };
+
+    const clearImageSelection = () => {
+        if (imagePreview) {
+            URL.revokeObjectURL(imagePreview);
+        }
+        setSelectedImage(null);
+        setImagePreview(null);
+    };
+
+    const handleSend = async (imageFile = null) => {
+        if ((!newMessage && !selectedImage) || !isJoined) {
+            console.log('Message send blocked:', { hasNewMessage: !!newMessage, hasSelectedImage: !!selectedImage, isJoined });
+            return;
+        }
+
+        try {
+            if (selectedImage) {
+                console.log('Uploading image...');
+                // Upload image first
+                const formData = new FormData();
+                formData.append('image', selectedImage);
+
+                const response = await fetch(API_ENDPOINTS.SESSIONS.UPLOAD_MESSAGE_IMAGE(sessionId), {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${authService.getToken()}`
+                    },
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to upload image');
+                }
+
+                const data = await response.json();
+                console.log('Image uploaded successfully:', data);
+                
+                // Send image message through WebSocket
+                WebSocketService.sendMessage({
+                    type: 'image',
+                    content: data.url,
+                    sessionId: parseInt(sessionId, 10)
+                });
+
+                clearImageSelection();
+            } else if (newMessage.trim()) {
+                console.log('Sending text message:', newMessage.trim());
+                // Send text message
+                WebSocketService.sendMessage({
+                    type: 'text',
+                    content: newMessage.trim(),
+                    sessionId: parseInt(sessionId, 10)
+                });
+                setNewMessage('');
+            }
+        } catch (error) {
+            console.error('Error sending message:', error);
+            alert('Failed to send message. Please try again.');
+        }
+    };
+
+    // Clean up preview URL on unmount
+    useEffect(() => {
+        return () => {
+            if (imagePreview) {
+                URL.revokeObjectURL(imagePreview);
+            }
+        };
+    }, [imagePreview]);
+
+    // Message type components
+    const MessageContent = ({ message }) => {
+        switch (message.type) {
+            case 'image':
+                return (
+                    <div className="mt-2">
+                        <img 
+                            src={message.content} 
+                            alt="Message attachment" 
+                            className="max-w-sm rounded-lg shadow-sm hover:shadow-md transition-shadow cursor-pointer"
+                            onClick={() => window.open(message.content, '_blank')}
+                            onError={(e) => {
+                                e.target.onerror = null;
+                                e.target.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%23999"><path d="M13 14h-2v-2h2m0-2h-2V7h2m-1-5C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z"/></svg>';
+                                e.target.className = "w-16 h-16 opacity-50";
+                                e.target.title = "Failed to load image";
+                            }}
+                        />
+                    </div>
+                );
+            case 'text':
+            default:
+                return (
+                    <div className="text-gray-700 mt-1 whitespace-pre-wrap break-words">
+                        {message.content}
+                    </div>
+                );
+        }
+    };
+
+    const MessageBubble = ({ message, user }) => (
+        <div className="flex items-start gap-3 hover:bg-gray-50 p-2 rounded-lg transition-colors">
+            <div className="flex-shrink-0 w-10 h-10">
+                {user?.avatarUrl ? (
+                    <img
+                        src={user.avatarUrl}
+                        alt={`${user?.nickname || 'User'}'s avatar`}
+                        className="w-10 h-10 rounded-full object-cover"
+                        onError={(e) => {
+                            e.target.onerror = null;
+                            e.target.src = `data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%23999"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>`;
+                        }}
+                    />
+                ) : (
+                    <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
+                        <span className="text-blue-600 font-semibold text-lg">
+                            {(user?.nickname || 'U')[0].toUpperCase()}
+                        </span>
+                    </div>
+                )}
+            </div>
+            <div className="flex-1 min-w-0">
+                <div className="flex justify-between items-center">
+                    <div className="font-semibold text-blue-600 truncate">
+                        {user?.nickname || 'Loading...'}
+                    </div>
+                    <div className="text-xs text-gray-500 flex-shrink-0 ml-2">
+                        {new Date(message.timestamp).toLocaleString()}
+                    </div>
+                </div>
+                <MessageContent message={message} />
+            </div>
+        </div>
+    );
 
     if (isLoading) {
         return (
@@ -331,39 +473,11 @@ function ChatRoom() {
                             <div className="space-y-4 min-h-full">
                                 {messages.map((msg, index) => (
                                     msg && msg.content && (
-                                        <div 
-                                            key={msg.id || index}
-                                            data-message-id={msg.id}
-                                            className="flex items-start gap-3 hover:bg-gray-50 p-2 rounded-lg transition-colors"
-                                        >
-                                            <div className="flex-shrink-0 w-10 h-10">
-                                                {users[msg.userId]?.avatarUrl ? (
-                                                    <img
-                                                        src={users[msg.userId].avatarUrl}
-                                                        alt={`${users[msg.userId]?.nickname || 'User'}'s avatar`}
-                                                        className="w-10 h-10 rounded-full object-cover"
-                                                    />
-                                                ) : (
-                                                    <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
-                                                        <span className="text-blue-600 font-semibold text-lg">
-                                                            {(users[msg.userId]?.nickname || 'U')[0].toUpperCase()}
-                                                        </span>
-                                                    </div>
-                                                )}
-                                            </div>
-                                            <div className="flex-1">
-                                                <div className="flex justify-between items-center">
-                                                    <div className="font-semibold text-blue-600">
-                                                        {users[msg.userId]?.nickname || 'Loading...'}
-                                                    </div>
-                                                    <div className="text-xs text-gray-500">
-                                                        {new Date(msg.timestamp).toLocaleString()}
-                                                    </div>
-                                                </div>
-                                                <div className="text-gray-700 mt-1">
-                                                    {msg.content}
-                                                </div>
-                                            </div>
+                                        <div key={msg.id || index} data-message-id={msg.id}>
+                                            <MessageBubble 
+                                                message={msg} 
+                                                user={users[msg.userId]} 
+                                            />
                                         </div>
                                     )
                                 ))}
@@ -374,24 +488,62 @@ function ChatRoom() {
                 </div>
 
                 {/* Send Message Bar */}
-                <div className="border-t p-4 bg-gray-50">
-                    <div className="flex gap-4">
-                        <input
-                            type="text"
-                            value={newMessage}
-                            onChange={(e) => setNewMessage(e.target.value)}
-                            onKeyPress={(e) => e.key === 'Enter' && handleSend()}
-                            placeholder="Type a message..."
-                            className="flex-1 px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-                            disabled={!isJoined}
-                        />
-                        <button
-                            onClick={handleSend}
-                            disabled={!isJoined}
-                            className="px-6 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                        >
-                            Send
-                        </button>
+                <div className="border-t bg-gray-50">
+                    {/* Image Preview */}
+                    {imagePreview && (
+                        <div className="p-4 border-b">
+                            <div className="relative inline-block">
+                                <img 
+                                    src={imagePreview} 
+                                    alt="Upload preview" 
+                                    className="max-h-32 rounded-lg shadow-sm"
+                                />
+                                <button
+                                    onClick={clearImageSelection}
+                                    className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2"
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                                        <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                                    </svg>
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Message Input */}
+                    <div className="p-4">
+                        <div className="flex gap-4">
+                            <div className="flex-1 flex gap-2">
+                                <input
+                                    type="text"
+                                    value={newMessage}
+                                    onChange={(e) => setNewMessage(e.target.value)}
+                                    onKeyPress={(e) => e.key === 'Enter' && handleSend()}
+                                    placeholder="Type a message..."
+                                    className="flex-1 px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                                    disabled={!isJoined}
+                                />
+                                <label className="p-2 bg-blue-100 rounded-md cursor-pointer hover:bg-blue-200 transition-colors">
+                                    <input
+                                        type="file"
+                                        accept="image/*"
+                                        onChange={handleImageUpload}
+                                        className="hidden"
+                                        disabled={!isJoined}
+                                    />
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                    </svg>
+                                </label>
+                            </div>
+                            <button
+                                onClick={handleSend}
+                                disabled={!isJoined || (!newMessage && !selectedImage)}
+                                className="px-6 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                            >
+                                Send
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>

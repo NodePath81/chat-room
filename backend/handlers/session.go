@@ -423,6 +423,8 @@ type MessageResponse struct {
 	Content   string    `json:"content"`
 	UserID    uint      `json:"userId"`
 	CreatedAt time.Time `json:"timestamp"`
+	Type      string    `json:"type"`
+	MsgType   string    `json:"msgType"`
 }
 
 type GetMessagesResponse struct {
@@ -483,6 +485,8 @@ func (h *SessionHandler) GetMessages(w http.ResponseWriter, r *http.Request) {
 			Content:   msg.Content,
 			UserID:    msg.UserID,
 			CreatedAt: msg.CreatedAt,
+			Type:      string(msg.Type),
+			MsgType:   string(msg.Type),
 		}
 	}
 

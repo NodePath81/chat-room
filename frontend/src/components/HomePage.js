@@ -88,18 +88,7 @@ function HomePage() {
     };
 
     const handleJoinSession = async (sessionId) => {
-        try {
-            const isMember = await SessionService.checkSessionMembership(sessionId);
-            
-            if (!isMember) {
-                const joined = await SessionService.joinSession(sessionId);
-                if (!joined) return;
-            }
-            
-            navigate(`/chat/${sessionId}`);
-        } catch (error) {
-            console.error('Join error:', error);
-        }
+        navigate(`/chat/${sessionId}`);
     };
 
     const getUserSessionRole = (sessionId) => {

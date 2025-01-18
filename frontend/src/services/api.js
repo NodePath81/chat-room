@@ -3,10 +3,10 @@ const API_BASE_URL = 'http://localhost:8080'; // or whatever port your backend i
 
 export const API_ENDPOINTS = {
     AUTH: {
-        REGISTER: `${API_BASE_URL}/api/auth/register`,
         LOGIN: `${API_BASE_URL}/api/auth/login`,
-        CHECK_USERNAME: `${API_BASE_URL}/api/auth/check-username`,
-        CHECK_NICKNAME: `${API_BASE_URL}/api/auth/check-nickname`,
+        REGISTER: `${API_BASE_URL}/api/auth/register`,
+        CHECK_USERNAME: (username) => `${API_BASE_URL}/api/auth/check-username?username=${username}`,
+        CHECK_NICKNAME: (nickname) => `${API_BASE_URL}/api/auth/check-nickname?nickname=${nickname}`,
     },
     USERS: {
         GET: (id) => `${API_BASE_URL}/api/users/${id}`,
@@ -17,12 +17,11 @@ export const API_ENDPOINTS = {
     SESSIONS: {
         LIST: `${API_BASE_URL}/api/sessions`,
         CREATE: `${API_BASE_URL}/api/sessions`,
+        JOIN: (token) => `${API_BASE_URL}/api/sessions/join?token=${token}`,
         GET: (id) => `${API_BASE_URL}/api/sessions/${id}`,
-        JOIN: `${API_BASE_URL}/api/sessions/join`,
-        CHECK_MEMBERSHIP: (id) => `${API_BASE_URL}/api/sessions/${id}`,
         CHECK_ROLE: (id) => `${API_BASE_URL}/api/sessions/${id}/role`,
-        GET_MEMBERS: (id) => `${API_BASE_URL}/api/sessions/${id}/members`,
-        KICK_MEMBER: (id) => `${API_BASE_URL}/api/sessions/${id}/kick`,
+        LIST_MEMBERS: (id) => `${API_BASE_URL}/api/sessions/${id}/members`,
+        KICK_MEMBER: (sessionId, userId) => `${API_BASE_URL}/api/sessions/${sessionId}/kick?userId=${userId}`,
         REMOVE: (id) => `${API_BASE_URL}/api/sessions/${id}/remove`,
         CREATE_SHARE_LINK: (id) => `${API_BASE_URL}/api/sessions/${id}/share`,
         GET_SHARE_INFO: `${API_BASE_URL}/api/sessions/share/info`,
@@ -31,7 +30,8 @@ export const API_ENDPOINTS = {
             if (params?.before) url.searchParams.set('before', params.before);
             if (params?.limit) url.searchParams.set('limit', params.limit);
             return url.toString();
-        }
+        },
+        UPLOAD_MESSAGE_IMAGE: (id) => `${API_BASE_URL}/api/sessions/${id}/messages/upload`,
     },
     AVATAR: {
         UPLOAD: `${API_BASE_URL}/api/avatar`,

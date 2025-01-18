@@ -40,6 +40,7 @@ func main() {
 	wsHandler := handlers.NewWebSocketHandler(db)
 	userHandler := handlers.NewUserHandler(db)
 	avatarHandler := handlers.NewAvatarHandler(db)
+	messageHandler := handlers.NewMessageHandler(db, wsHandler)
 
 	// Setup router
 	r := chi.NewRouter()
@@ -75,6 +76,7 @@ func main() {
 			r.Get("/remove", sessionHandler.RemoveSession)
 			r.Post("/share", sessionHandler.CreateShareLink)
 			r.Get("/messages", sessionHandler.GetMessages)
+			r.Post("/messages/upload", messageHandler.UploadMessageImage)
 		})
 	})
 
