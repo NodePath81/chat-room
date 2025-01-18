@@ -373,3 +373,47 @@ func (h *SessionHandler) RemoveSession(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{"message": "Session removed successfully"})
 }
+
+type ShareInfoResponse struct {
+	SessionName     string `json:"session_name"`
+	InviterNickname string `json:"inviter_nickname"`
+}
+
+func (h *SessionHandler) GetShareInfo(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	// Get token from query params
+	token := r.URL.Query().Get("token")
+	if token == "" {
+		http.Error(w, "Token is required", http.StatusBadRequest)
+		return
+	}
+
+	// Validate token
+	claims, err := auth.ValidateSessionShareToken(token)
+	if err != nil {
+		http.Error(w, "Invalid or expired token", http.StatusUnauthorized)
+		return
+	}
+
+	// Get session info
+	var session models.Session
+	if err := h.db.First(&session, claims.SessionID).Error; err != nil {
+		http.Error(w, "Session not found", http.StatusNotFound)
+		return
+	}
+
+	// Get inviter info
+	var inviter models.User
+	if err := h.db.First(&inviter, session.CreatorID).Error; err != nil {
+		http.Error(w, "Inviter not found", http.StatusNotFound)
+		return
+	}
+
+	response := ShareInfoResponse{
+		SessionName:     session.Name,
+		InviterNickname: inviter.Nickname,
+	}
+
+	json.NewEncoder(w).Encode(response)
+}

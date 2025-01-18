@@ -66,6 +66,7 @@ func main() {
 		r.Get("/", sessionHandler.GetSessions)
 		r.Post("/", sessionHandler.CreateSession)
 		r.Get("/join", sessionHandler.JoinSession)
+		r.Get("/share/info", sessionHandler.GetShareInfo)
 		r.Route("/{id}", func(r chi.Router) {
 			r.Get("/", sessionHandler.GetSession)
 			r.Get("/role", sessionHandler.CheckRole)

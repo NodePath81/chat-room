@@ -24,7 +24,8 @@ export const API_ENDPOINTS = {
         GET_MEMBERS: (id) => `${API_BASE_URL}/api/sessions/${id}/members`,
         KICK_MEMBER: (id) => `${API_BASE_URL}/api/sessions/${id}/kick`,
         REMOVE: (id) => `${API_BASE_URL}/api/sessions/${id}/remove`,
-        CREATE_SHARE_LINK: (id) => `${API_BASE_URL}/api/sessions/${id}/share`
+        CREATE_SHARE_LINK: (id) => `${API_BASE_URL}/api/sessions/${id}/share`,
+        GET_SHARE_INFO: `${API_BASE_URL}/api/sessions/share/info`
     },
     AVATAR: {
         UPLOAD: `${API_BASE_URL}/api/avatar`,
