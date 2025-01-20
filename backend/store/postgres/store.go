@@ -18,9 +18,10 @@ var queries embed.FS
 var migrations embed.FS
 
 type Store struct {
-	db      *pgxpool.Pool
-	querier *queryStore
-	loader  *queryLoader
+	db        *pgxpool.Pool
+	querier   *queryStore
+	loader    *queryLoader
+	migration *migrationManager
 }
 
 type Tx struct {
@@ -46,8 +47,9 @@ func New(ctx context.Context, connString string) (*Store, error) {
 	}
 
 	s := &Store{
-		db:      pool,
-		querier: qs,
+		db:        pool,
+		querier:   qs,
+		migration: newMigrationManager(pool, migrations),
 	}
 	s.loader = &queryLoader{db: pool, querier: qs}
 
@@ -79,4 +81,41 @@ func (t *Tx) Commit() error {
 
 func (t *Tx) Rollback() error {
 	return t.tx.Rollback(context.Background())
+}
+
+// Migrate applies all pending migrations
+func (s *Store) Migrate(ctx context.Context) error {
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("beginning migration transaction: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	migrator := newMigrationManager(tx, migrations)
+	if err := migrator.Migrate(ctx); err != nil {
+		return fmt.Errorf("applying migrations: %w", err)
+	}
+
+	return tx.Commit(ctx)
+}
+
+// Rollback reverts the last applied migration
+func (s *Store) Rollback(ctx context.Context) error {
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("beginning rollback transaction: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	migrator := newMigrationManager(tx, migrations)
+	if err := migrator.Rollback(ctx); err != nil {
+		return fmt.Errorf("rolling back migration: %w", err)
+	}
+
+	return tx.Commit(ctx)
+}
+
+// GetAppliedMigrations returns all migrations that have been applied
+func (s *Store) GetAppliedMigrations(ctx context.Context) (map[int]migration, error) {
+	return s.migration.GetAppliedMigrations(ctx)
 }
