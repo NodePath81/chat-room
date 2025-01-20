@@ -3,7 +3,7 @@ package models
 import (
 	"time"
 
-	"gorm.io/gorm"
+	"github.com/google/uuid"
 )
 
 type MessageType string
@@ -14,12 +14,11 @@ const (
 )
 
 type Message struct {
-	gorm.Model
+	ID        uuid.UUID   `json:"id"`
 	Type      MessageType `json:"type"`
 	Content   string      `json:"content"`
-	UserID    uint        `json:"userId"`
-	User      User        `gorm:"foreignKey:UserID"`
-	SessionID uint        `json:"sessionId"`
-	Session   Session     `gorm:"foreignKey:SessionID"`
+	UserID    uuid.UUID   `json:"userId"`
+	SessionID uuid.UUID   `json:"sessionId"`
 	CreatedAt time.Time   `json:"createdAt"`
+	UpdatedAt time.Time   `json:"updatedAt"`
 }

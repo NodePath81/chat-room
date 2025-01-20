@@ -1,13 +1,15 @@
 package models
 
 import (
-	"gorm.io/gorm"
+	"time"
+
+	"github.com/google/uuid"
 )
 
 type Session struct {
-	gorm.Model
-	Name      string    `json:"name" gorm:"not null"`
-	CreatorID uint      `json:"creatorId" gorm:"not null"`
-	Users     []User    `gorm:"many2many:user_sessions;"`
-	Messages  []Message `gorm:"foreignKey:SessionID"`
+	ID        uuid.UUID `json:"id"`
+	Name      string    `json:"name"`
+	CreatorID uuid.UUID `json:"creatorId"`
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
 }

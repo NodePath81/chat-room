@@ -1,14 +1,18 @@
 package models
 
 import (
-	"gorm.io/gorm"
+	"time"
+
+	"github.com/google/uuid"
 )
 
 type User struct {
-	gorm.Model
-	Username  string    `gorm:"uniqueIndex;not null"`
-	Password  string    `gorm:"not null"`
-	Nickname  string    `gorm:"uniqueIndex;not null"`
-	AvatarURL string    `gorm:"type:text"`
-	Sessions  []Session `gorm:"many2many:user_sessions;"`
+	ID       uuid.UUID `json:"id"`
+	Username string    `json:"username"`
+	// Do not expose password in JSON
+	Password  string
+	Nickname  string `json:"nickname"`
+	AvatarURL string `json:"avatarUrl"`
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
