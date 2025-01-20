@@ -1,14 +1,16 @@
 package main
 
 import (
+	"context"
+	"fmt"
 	"log"
 	"net/http"
 
 	"chat-room/config"
-	"chat-room/database"
 	"chat-room/handlers"
 	custommw "chat-room/middleware"
 	"chat-room/s3"
+	"chat-room/store/postgres"
 
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
@@ -22,10 +24,25 @@ func main() {
 		log.Fatal(err)
 	}
 
-	// Initialize database
-	db, err := database.InitDB(cfg)
+	// Construct database URL
+	dbURL := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
+		cfg.DBUser,
+		cfg.DBPassword,
+		cfg.DBHost,
+		cfg.DBPort,
+		cfg.DBName,
+	)
+
+	// Initialize store
+	store, err := postgres.New(context.Background(), dbURL)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal("Failed to initialize store:", err)
+	}
+	defer store.Close()
+
+	// Apply migrations
+	if err := store.Migrate(context.Background()); err != nil {
+		log.Fatal("Failed to apply migrations:", err)
 	}
 
 	// Initialize MinIO
@@ -35,12 +52,12 @@ func main() {
 	}
 
 	// Initialize handlers
-	authHandler := handlers.NewAuthHandler(db)
-	sessionHandler := handlers.NewSessionHandler(db)
-	wsHandler := handlers.NewWebSocketHandler(db)
-	userHandler := handlers.NewUserHandler(db)
-	avatarHandler := handlers.NewAvatarHandler(db)
-	messageHandler := handlers.NewMessageHandler(db, wsHandler)
+	wsHandler := handlers.NewWebSocketHandler(store)
+	authHandler := handlers.NewAuthHandler(store)
+	sessionHandler := handlers.NewSessionHandler(store)
+	userHandler := handlers.NewUserHandler(store)
+	avatarHandler := handlers.NewAvatarHandler(store)
+	messageHandler := handlers.NewMessageHandler(store, wsHandler)
 
 	// Setup router
 	r := chi.NewRouter()

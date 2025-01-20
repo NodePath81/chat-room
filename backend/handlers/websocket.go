@@ -1,15 +1,17 @@
 package handlers
 
 import (
-	"chat-room/auth"
 	"log"
 	"net/http"
-	"strconv"
 	"sync"
 	"time"
 
+	"chat-room/auth"
+	"chat-room/models"
+	"chat-room/store"
+
+	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
-	"gorm.io/gorm"
 )
 
 var upgrader = websocket.Upgrader{
@@ -21,41 +23,46 @@ var upgrader = websocket.Upgrader{
 }
 
 type Client struct {
-	UserID   uint
+	UserID   uuid.UUID
 	Username string
 	Conn     *websocket.Conn
 	mu       sync.Mutex
 }
 
-type Message struct {
-	UserID    uint      `json:"userId"`
-	Content   string    `json:"content"`
-	CreatedAt time.Time `json:"timestamp"`
-	SessionID uint      `json:"sessionId"`
-	Type      string    `json:"type"`
-	MsgType   string    `json:"msgType"`
+type WebSocketMessage struct {
+	Content string             `json:"content"`
+	Type    models.MessageType `json:"type"`
+	MsgType models.MessageType `json:"msgType"`
 }
 
 type SessionClients struct {
-	Clients map[uint][]*Client // map[userID][]*Client
+	Clients map[uuid.UUID][]*Client // map[userID][]*Client
 	mu      sync.RWMutex
 }
 
 type WebSocketHandler struct {
-	sessions sync.Map // map[uint]*SessionClients
-	db       *gorm.DB
+	sessions sync.Map // map[uuid.UUID]*SessionClients
+	store    store.Store
 }
 
-func NewWebSocketHandler(db *gorm.DB) *WebSocketHandler {
+func NewWebSocketHandler(store store.Store) *WebSocketHandler {
 	return &WebSocketHandler{
-		db: db,
+		store: store,
 	}
 }
 
 func (h *WebSocketHandler) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
-	sessionID, err := strconv.ParseUint(r.URL.Query().Get("sessionId"), 10, 64)
+	sessionIDStr := r.URL.Query().Get("sessionId")
+	sessionID, err := uuid.Parse(sessionIDStr)
 	if err != nil {
 		http.Error(w, "Invalid session ID", http.StatusBadRequest)
+		return
+	}
+
+	// Verify session exists
+	session, err := h.store.GetSessionByID(r.Context(), sessionID)
+	if err != nil {
+		http.Error(w, "Session not found", http.StatusNotFound)
 		return
 	}
 
@@ -81,16 +88,33 @@ func (h *WebSocketHandler) HandleWebSocket(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	// Verify user is a member of the session
+	role, err := h.store.GetUserSessionRole(r.Context(), claims.UserID, session.ID)
+	if err != nil || role == "" {
+		conn.WriteJSON(map[string]string{"error": "not a member of this session"})
+		conn.Close()
+		return
+	}
+
 	// Get or create session clients
-	sessionClientsInterface, _ := h.sessions.LoadOrStore(uint(sessionID), &SessionClients{
-		Clients: make(map[uint][]*Client),
+	sessionClientsInterface, _ := h.sessions.LoadOrStore(sessionID, &SessionClients{
+		Clients: make(map[uuid.UUID][]*Client),
 	})
 	sessionClients := sessionClientsInterface.(*SessionClients)
 
+	// Get user info
+	user, err := h.store.GetUserByID(r.Context(), claims.UserID)
+	if err != nil {
+		conn.WriteJSON(map[string]string{"error": "user not found"})
+		conn.Close()
+		return
+	}
+
 	// Create new client
 	client := &Client{
-		UserID: claims.UserID,
-		Conn:   conn,
+		UserID:   user.ID,
+		Username: user.Username,
+		Conn:     conn,
 	}
 
 	// Add client to session
@@ -102,64 +126,62 @@ func (h *WebSocketHandler) HandleWebSocket(w http.ResponseWriter, r *http.Reques
 	sessionClients.mu.Unlock()
 
 	// Send message history
-	history, err := h.GetSessionMessages(uint(sessionID))
+	messages, err := h.store.GetMessagesBySessionID(r.Context(), sessionID, 50, time.Now().UTC())
 	if err == nil {
-		conn.WriteJSON(map[string]interface{}{
-			"type":     "history",
-			"messages": history,
-		})
+		historyResponse := struct {
+			Type     string            `json:"type"`
+			Messages []*models.Message `json:"messages"`
+		}{
+			Type:     "history",
+			Messages: messages,
+		}
+		conn.WriteJSON(historyResponse)
 	}
 
 	// Handle messages
 	go func() {
-		defer h.removeConnection(uint(sessionID), claims.UserID, client)
+		defer h.removeConnection(sessionID, claims.UserID, client)
 
 		for {
-			var msg struct {
-				Content string `json:"content"`
-				Type    string `json:"type"`
-				MsgType string `json:"msgType"`
-			}
-			if err := conn.ReadJSON(&msg); err != nil {
+			var wsMsg WebSocketMessage
+			if err := conn.ReadJSON(&wsMsg); err != nil {
 				log.Printf("Error reading message: %v", err)
 				return
 			}
 
-			log.Printf("Received message: %+v", msg)
+			log.Printf("Received message from user %s in session %s: %+v", user.Username, sessionID, wsMsg)
 
-			message := Message{
+			message := &models.Message{
+				ID:        uuid.New(),
 				UserID:    claims.UserID,
-				Content:   msg.Content,
+				Content:   wsMsg.Content,
 				CreatedAt: time.Now().UTC(),
-				SessionID: uint(sessionID),
-				Type:      msg.Type,
-				MsgType:   msg.MsgType,
+				UpdatedAt: time.Now().UTC(),
+				SessionID: sessionID,
+				Type:      wsMsg.Type,
 			}
 
 			// Set default type if not specified
 			if message.Type == "" {
-				message.Type = "message"
-			}
-			if message.MsgType == "" {
-				message.MsgType = "text"
+				message.Type = models.MessageTypeText
 			}
 
 			log.Printf("Processing message: %+v", message)
 
 			// Save message to database
-			if err := h.SaveMessage(uint(sessionID), message); err != nil {
+			if err := h.store.CreateMessage(r.Context(), message); err != nil {
 				log.Printf("Error saving message: %v", err)
 				continue
 			}
 
-			log.Printf("Broadcasting message to session %d", sessionID)
+			log.Printf("Broadcasting message to session %s", sessionID)
 			// Broadcast message
-			h.broadcast(uint(sessionID), message)
+			h.broadcast(sessionID, message)
 		}
 	}()
 }
 
-func (h *WebSocketHandler) removeConnection(sessionID, userID uint, client *Client) {
+func (h *WebSocketHandler) removeConnection(sessionID, userID uuid.UUID, client *Client) {
 	sessionClientsInterface, ok := h.sessions.Load(sessionID)
 	if !ok {
 		return
@@ -191,7 +213,7 @@ func (h *WebSocketHandler) removeConnection(sessionID, userID uint, client *Clie
 	client.Conn.Close()
 }
 
-func (h *WebSocketHandler) broadcast(sessionID uint, message Message) {
+func (h *WebSocketHandler) broadcast(sessionID uuid.UUID, message *models.Message) {
 	sessionClientsInterface, ok := h.sessions.Load(sessionID)
 	if !ok {
 		return
@@ -200,11 +222,6 @@ func (h *WebSocketHandler) broadcast(sessionID uint, message Message) {
 	sessionClients := sessionClientsInterface.(*SessionClients)
 	sessionClients.mu.RLock()
 	defer sessionClients.mu.RUnlock()
-
-	// Set default message type if not specified
-	if message.Type == "" {
-		message.Type = "message"
-	}
 
 	// Broadcast to all clients in the session
 	for _, clients := range sessionClients.Clients {
@@ -216,14 +233,4 @@ func (h *WebSocketHandler) broadcast(sessionID uint, message Message) {
 			client.mu.Unlock()
 		}
 	}
-}
-
-func (h *WebSocketHandler) GetSessionMessages(sessionID uint) ([]Message, error) {
-	var messages []Message
-	err := h.db.Where("session_id = ?", sessionID).Order("created_at asc").Find(&messages).Error
-	return messages, err
-}
-
-func (h *WebSocketHandler) SaveMessage(sessionID uint, message Message) error {
-	return h.db.Create(&message).Error
 }

@@ -8,108 +8,121 @@ import (
 
 	"chat-room/auth"
 	"chat-room/models"
+	"chat-room/store"
 
 	"github.com/go-chi/chi/v5"
-	"gorm.io/gorm"
+	"github.com/google/uuid"
 )
 
 type SessionHandler struct {
-	db *gorm.DB
+	store store.Store
 }
 
-func NewSessionHandler(db *gorm.DB) *SessionHandler {
-	return &SessionHandler{db: db}
+func NewSessionHandler(store store.Store) *SessionHandler {
+	return &SessionHandler{store: store}
 }
 
 type CreateSessionRequest struct {
 	Name string `json:"name"`
 }
 
+type SessionResponse struct {
+	*models.Session
+	Users []*models.User `json:"users"`
+}
+
 func (h *SessionHandler) CreateSession(w http.ResponseWriter, r *http.Request) {
 	var req CreateSessionRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		http.Error(w, "Invalid request format", http.StatusBadRequest)
 		return
 	}
 
 	userID := auth.GetUserIDFromContext(r)
 
-	// Start a transaction
-	tx := h.db.Begin()
-	if tx.Error != nil {
-		http.Error(w, "Failed to start transaction", http.StatusInternalServerError)
-		return
-	}
-
-	session := models.Session{
+	session := &models.Session{
+		ID:        uuid.New(),
 		Name:      req.Name,
 		CreatorID: userID,
+		CreatedAt: time.Now().UTC(),
+		UpdatedAt: time.Now().UTC(),
 	}
 
-	if err := tx.Create(&session).Error; err != nil {
-		tx.Rollback()
+	if err := h.store.CreateSession(r.Context(), session); err != nil {
 		http.Error(w, "Error creating session", http.StatusInternalServerError)
 		return
 	}
 
-	// Add creator to the session
-	var user models.User
-	if err := tx.First(&user, userID).Error; err != nil {
-		tx.Rollback()
-		http.Error(w, "User not found", http.StatusInternalServerError)
+	// Get users in the session
+	users, err := h.store.GetSessionUsers(r.Context(), session.ID)
+	if err != nil {
+		http.Error(w, "Error fetching session users", http.StatusInternalServerError)
 		return
 	}
 
-	if err := tx.Model(&session).Association("Users").Append(&user); err != nil {
-		tx.Rollback()
-		http.Error(w, "Failed to add user to session", http.StatusInternalServerError)
-		return
-	}
-
-	if err := tx.Commit().Error; err != nil {
-		http.Error(w, "Failed to commit transaction", http.StatusInternalServerError)
-		return
-	}
-
-	// Fetch the complete session with users
-	if err := h.db.Preload("Users").First(&session, session.ID).Error; err != nil {
-		http.Error(w, "Error fetching created session", http.StatusInternalServerError)
-		return
+	response := SessionResponse{
+		Session: session,
+		Users:   users,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(session)
+	json.NewEncoder(w).Encode(response)
 }
 
 func (h *SessionHandler) GetSessions(w http.ResponseWriter, r *http.Request) {
-	var sessions []models.Session
-	if err := h.db.Preload("Users").Find(&sessions).Error; err != nil {
+	userID := auth.GetUserIDFromContext(r)
+
+	sessions, err := h.store.GetUserSessions(r.Context(), userID)
+	if err != nil {
 		http.Error(w, "Error fetching sessions", http.StatusInternalServerError)
 		return
 	}
 
+	// Build response with users for each session
+	response := make([]SessionResponse, 0, len(sessions))
+	for _, session := range sessions {
+		users, err := h.store.GetSessionUsers(r.Context(), session.ID)
+		if err != nil {
+			http.Error(w, "Error fetching session users", http.StatusInternalServerError)
+			return
+		}
+		response = append(response, SessionResponse{
+			Session: session,
+			Users:   users,
+		})
+	}
+
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(sessions)
+	json.NewEncoder(w).Encode(response)
 }
 
 func (h *SessionHandler) GetSession(w http.ResponseWriter, r *http.Request) {
-	sessionID := chi.URLParam(r, "id")
-	var session models.Session
+	sessionID, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		http.Error(w, "Invalid session ID", http.StatusBadRequest)
+		return
+	}
 
-	if err := h.db.Preload("Users").First(&session, sessionID).Error; err != nil {
+	session, err := h.store.GetSessionByID(r.Context(), sessionID)
+	if err != nil {
 		http.Error(w, "Session not found", http.StatusNotFound)
 		return
 	}
 
-	json.NewEncoder(w).Encode(session)
-}
+	// Get users in the session
+	users, err := h.store.GetSessionUsers(r.Context(), sessionID)
+	if err != nil {
+		http.Error(w, "Error fetching session users", http.StatusInternalServerError)
+		return
+	}
 
-func (h *SessionHandler) checkMembership(userID uint, sessionID string) (bool, error) {
-	var exists int64
-	err := h.db.Table("user_sessions").
-		Where("user_id = ? AND session_id = ?", userID, sessionID).
-		Count(&exists).Error
-	return exists > 0, err
+	response := SessionResponse{
+		Session: session,
+		Users:   users,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
 }
 
 type RoleResponse struct {
@@ -118,12 +131,18 @@ type RoleResponse struct {
 
 func (h *SessionHandler) CheckRole(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	sessionID := chi.URLParam(r, "id")
+
+	sessionID, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		http.Error(w, "Invalid session ID", http.StatusBadRequest)
+		return
+	}
+
 	userID := auth.GetUserIDFromContext(r)
 
-	// First check if session exists
-	var session models.Session
-	if err := h.db.First(&session, sessionID).Error; err != nil {
+	// Get session to check if user is creator
+	session, err := h.store.GetSessionByID(r.Context(), sessionID)
+	if err != nil {
 		http.Error(w, "Session not found", http.StatusNotFound)
 		return
 	}
@@ -134,18 +153,14 @@ func (h *SessionHandler) CheckRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check if user is member
-	isMember, err := h.checkMembership(userID, sessionID)
+	// Get user's role in the session
+	role, err := h.store.GetUserSessionRole(r.Context(), userID, sessionID)
 	if err != nil {
-		http.Error(w, "Error checking membership", http.StatusInternalServerError)
-		return
-	}
-	if isMember {
-		json.NewEncoder(w).Encode(RoleResponse{Role: "member"})
+		json.NewEncoder(w).Encode(RoleResponse{Role: "none"})
 		return
 	}
 
-	json.NewEncoder(w).Encode(RoleResponse{Role: "none"})
+	json.NewEncoder(w).Encode(RoleResponse{Role: role})
 }
 
 func (h *SessionHandler) JoinSession(w http.ResponseWriter, r *http.Request) {
@@ -165,36 +180,18 @@ func (h *SessionHandler) JoinSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get user ID from auth context
 	userID := auth.GetUserIDFromContext(r)
 
-	// Check if user is already a member
-	isMember, err := h.checkMembership(userID, strconv.FormatUint(uint64(claims.SessionID), 10))
+	// Check if session exists
+	session, err := h.store.GetSessionByID(r.Context(), claims.SessionID)
 	if err != nil {
-		http.Error(w, "Error checking membership", http.StatusInternalServerError)
-		return
-	}
-	if isMember {
-		w.WriteHeader(http.StatusOK)
-		return
-	}
-
-	// Get session
-	var session models.Session
-	if err := h.db.First(&session, claims.SessionID).Error; err != nil {
 		http.Error(w, "Session not found", http.StatusNotFound)
 		return
 	}
 
-	// Get user
-	var user models.User
-	if err := h.db.First(&user, userID).Error; err != nil {
-		http.Error(w, "User not found", http.StatusInternalServerError)
-		return
-	}
-
 	// Add user to session
-	if err := h.db.Model(&session).Association("Users").Append(&user); err != nil {
+	err = h.store.AddUserToSession(r.Context(), userID, session.ID, "member")
+	if err != nil {
 		http.Error(w, "Failed to join session", http.StatusInternalServerError)
 		return
 	}
@@ -214,7 +211,12 @@ type ShareLinkResponse struct {
 func (h *SessionHandler) CreateShareLink(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	sessionID := chi.URLParam(r, "id")
+	sessionID, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		http.Error(w, "Invalid session ID", http.StatusBadRequest)
+		return
+	}
+
 	userID := auth.GetUserIDFromContext(r)
 
 	// Parse request body
@@ -230,16 +232,9 @@ func (h *SessionHandler) CreateShareLink(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Convert sessionID from string to uint
-	sessionIDUint, err := strconv.ParseUint(sessionID, 10, 32)
-	if err != nil {
-		http.Error(w, "Invalid session ID", http.StatusBadRequest)
-		return
-	}
-
 	// Check if user is the creator of the session
-	var session models.Session
-	if err := h.db.First(&session, sessionIDUint).Error; err != nil {
+	session, err := h.store.GetSessionByID(r.Context(), sessionID)
+	if err != nil {
 		http.Error(w, "Session not found", http.StatusNotFound)
 		return
 	}
@@ -250,10 +245,9 @@ func (h *SessionHandler) CreateShareLink(w http.ResponseWriter, r *http.Request)
 	}
 
 	// Generate share token
-	duration := time.Duration(req.DurationDays) * 24 * time.Hour
-	token, err := auth.GenerateSessionShareToken(uint(sessionIDUint), duration)
+	token, err := auth.GenerateSessionShareToken(sessionID, time.Duration(req.DurationDays)*24*time.Hour)
 	if err != nil {
-		http.Error(w, "Failed to generate share token", http.StatusInternalServerError)
+		http.Error(w, "Error generating share token", http.StatusInternalServerError)
 		return
 	}
 
@@ -261,21 +255,26 @@ func (h *SessionHandler) CreateShareLink(w http.ResponseWriter, r *http.Request)
 }
 
 type MembersResponse struct {
-	Members []uint `json:"members"`
+	Members []uuid.UUID `json:"members"`
 }
 
 func (h *SessionHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	sessionID := chi.URLParam(r, "id")
 
-	var session models.Session
-	if err := h.db.Preload("Users").First(&session, sessionID).Error; err != nil {
-		http.Error(w, "Session not found", http.StatusNotFound)
+	sessionID, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		http.Error(w, "Invalid session ID", http.StatusBadRequest)
 		return
 	}
 
-	memberIDs := make([]uint, len(session.Users))
-	for i, user := range session.Users {
+	users, err := h.store.GetSessionUsers(r.Context(), sessionID)
+	if err != nil {
+		http.Error(w, "Error fetching session members", http.StatusInternalServerError)
+		return
+	}
+
+	memberIDs := make([]uuid.UUID, len(users))
+	for i, user := range users {
 		memberIDs[i] = user.ID
 	}
 
@@ -284,13 +283,24 @@ func (h *SessionHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
 
 func (h *SessionHandler) KickMember(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	sessionID := chi.URLParam(r, "id")
-	memberID := r.URL.Query().Get("member")
+
+	sessionID, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		http.Error(w, "Invalid session ID", http.StatusBadRequest)
+		return
+	}
+
+	memberID, err := uuid.Parse(r.URL.Query().Get("member"))
+	if err != nil {
+		http.Error(w, "Invalid member ID", http.StatusBadRequest)
+		return
+	}
+
 	userID := auth.GetUserIDFromContext(r)
 
 	// Check if session exists and user is creator
-	var session models.Session
-	if err := h.db.First(&session, sessionID).Error; err != nil {
+	session, err := h.store.GetSessionByID(r.Context(), sessionID)
+	if err != nil {
 		http.Error(w, "Session not found", http.StatusNotFound)
 		return
 	}
@@ -301,24 +311,14 @@ func (h *SessionHandler) KickMember(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Cannot kick the creator
-	memberIDUint, err := strconv.ParseUint(memberID, 10, 32)
-	if err != nil {
-		http.Error(w, "Invalid member ID", http.StatusBadRequest)
-		return
-	}
-	if uint(memberIDUint) == session.CreatorID {
+	if memberID == session.CreatorID {
 		http.Error(w, "Cannot kick the creator", http.StatusBadRequest)
 		return
 	}
 
 	// Remove the member from the session
-	var member models.User
-	if err := h.db.First(&member, memberID).Error; err != nil {
-		http.Error(w, "Member not found", http.StatusNotFound)
-		return
-	}
-
-	if err := h.db.Model(&session).Association("Users").Delete(&member); err != nil {
+	err = h.store.RemoveUserFromSession(r.Context(), memberID, sessionID)
+	if err != nil {
 		http.Error(w, "Failed to kick member", http.StatusInternalServerError)
 		return
 	}
@@ -329,12 +329,18 @@ func (h *SessionHandler) KickMember(w http.ResponseWriter, r *http.Request) {
 
 func (h *SessionHandler) RemoveSession(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	sessionID := chi.URLParam(r, "id")
+
+	sessionID, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		http.Error(w, "Invalid session ID", http.StatusBadRequest)
+		return
+	}
+
 	userID := auth.GetUserIDFromContext(r)
 
 	// Check if session exists and user is creator
-	var session models.Session
-	if err := h.db.First(&session, sessionID).Error; err != nil {
+	session, err := h.store.GetSessionByID(r.Context(), sessionID)
+	if err != nil {
 		http.Error(w, "Session not found", http.StatusNotFound)
 		return
 	}
@@ -344,28 +350,21 @@ func (h *SessionHandler) RemoveSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Start a transaction
-	tx := h.db.Begin()
-	if tx.Error != nil {
+	// Start a transaction to remove the session and all its associations
+	tx, err := h.store.BeginTx(r.Context())
+	if err != nil {
 		http.Error(w, "Failed to start transaction", http.StatusInternalServerError)
 		return
 	}
+	defer tx.Rollback()
 
-	// Remove all user associations first
-	if err := tx.Model(&session).Association("Users").Clear(); err != nil {
-		tx.Rollback()
-		http.Error(w, "Failed to remove session members", http.StatusInternalServerError)
-		return
-	}
-
-	// Delete the session
-	if err := tx.Delete(&session).Error; err != nil {
-		tx.Rollback()
+	// Delete the session (this will cascade delete all associations)
+	if err := tx.DeleteSession(r.Context(), sessionID); err != nil {
 		http.Error(w, "Failed to delete session", http.StatusInternalServerError)
 		return
 	}
 
-	if err := tx.Commit().Error; err != nil {
+	if err := tx.Commit(); err != nil {
 		http.Error(w, "Failed to commit transaction", http.StatusInternalServerError)
 		return
 	}
@@ -375,8 +374,8 @@ func (h *SessionHandler) RemoveSession(w http.ResponseWriter, r *http.Request) {
 }
 
 type ShareInfoResponse struct {
-	SessionName     string `json:"session_name"`
-	InviterNickname string `json:"inviter_nickname"`
+	SessionName     string `json:"sessionName"`
+	InviterNickname string `json:"inviterNickname"`
 }
 
 func (h *SessionHandler) GetShareInfo(w http.ResponseWriter, r *http.Request) {
@@ -397,15 +396,15 @@ func (h *SessionHandler) GetShareInfo(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get session info
-	var session models.Session
-	if err := h.db.First(&session, claims.SessionID).Error; err != nil {
+	session, err := h.store.GetSessionByID(r.Context(), claims.SessionID)
+	if err != nil {
 		http.Error(w, "Session not found", http.StatusNotFound)
 		return
 	}
 
 	// Get inviter info
-	var inviter models.User
-	if err := h.db.First(&inviter, session.CreatorID).Error; err != nil {
+	inviter, err := h.store.GetUserByID(r.Context(), session.CreatorID)
+	if err != nil {
 		http.Error(w, "Inviter not found", http.StatusNotFound)
 		return
 	}
@@ -419,12 +418,12 @@ func (h *SessionHandler) GetShareInfo(w http.ResponseWriter, r *http.Request) {
 }
 
 type MessageResponse struct {
-	ID        uint      `json:"id"`
-	Content   string    `json:"content"`
-	UserID    uint      `json:"userId"`
-	CreatedAt time.Time `json:"timestamp"`
-	Type      string    `json:"type"`
-	MsgType   string    `json:"msgType"`
+	ID        uuid.UUID          `json:"id"`
+	Content   string             `json:"content"`
+	UserID    uuid.UUID          `json:"userId"`
+	CreatedAt time.Time          `json:"timestamp"`
+	Type      models.MessageType `json:"type"`
+	MsgType   models.MessageType `json:"msgType"`
 }
 
 type GetMessagesResponse struct {
@@ -434,7 +433,12 @@ type GetMessagesResponse struct {
 
 func (h *SessionHandler) GetMessages(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	sessionID := chi.URLParam(r, "id")
+
+	sessionID, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		http.Error(w, "Invalid session ID", http.StatusBadRequest)
+		return
+	}
 
 	// Parse pagination parameters
 	limit := 50 // Default limit
@@ -447,22 +451,20 @@ func (h *SessionHandler) GetMessages(w http.ResponseWriter, r *http.Request) {
 		limit = 100
 	}
 
-	var beforeID uint
+	var before time.Time
 	if beforeStr := r.URL.Query().Get("before"); beforeStr != "" {
-		if parsedBefore, err := strconv.ParseUint(beforeStr, 10, 32); err == nil {
-			beforeID = uint(parsedBefore)
+		if parsedBefore, err := time.Parse(time.RFC3339, beforeStr); err == nil {
+			before = parsedBefore
+		} else {
+			before = time.Now().UTC()
 		}
+	} else {
+		before = time.Now().UTC()
 	}
 
-	// Build query
-	query := h.db.Model(&models.Message{}).Where("session_id = ?", sessionID)
-	if beforeID > 0 {
-		query = query.Where("id < ?", beforeID)
-	}
-
-	// Get messages
-	var messages []models.Message
-	if err := query.Order("id desc").Limit(limit + 1).Find(&messages).Error; err != nil {
+	// Get messages using the store interface
+	messages, err := h.store.GetMessagesBySessionID(r.Context(), sessionID, limit+1, before)
+	if err != nil {
 		http.Error(w, "Error fetching messages", http.StatusInternalServerError)
 		return
 	}
@@ -485,8 +487,8 @@ func (h *SessionHandler) GetMessages(w http.ResponseWriter, r *http.Request) {
 			Content:   msg.Content,
 			UserID:    msg.UserID,
 			CreatedAt: msg.CreatedAt,
-			Type:      string(msg.Type),
-			MsgType:   string(msg.Type),
+			Type:      msg.Type,
+			MsgType:   msg.Type,
 		}
 	}
 

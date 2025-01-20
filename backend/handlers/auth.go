@@ -7,18 +7,19 @@ import (
 
 	"chat-room/auth"
 	"chat-room/models"
+	"chat-room/store"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
-	"gorm.io/gorm"
 )
 
 type AuthHandler struct {
-	db *gorm.DB
+	store store.Store
 }
 
-func NewAuthHandler(db *gorm.DB) *AuthHandler {
-	return &AuthHandler{db: db}
+func NewAuthHandler(store store.Store) *AuthHandler {
+	return &AuthHandler{store: store}
 }
 
 type RegisterRequest struct {
@@ -35,8 +36,8 @@ type LoginRequest struct {
 type LoginResponse struct {
 	Token string `json:"token"`
 	User  struct {
-		ID       uint   `json:"id"`
-		Nickname string `json:"nickname"`
+		ID       uuid.UUID `json:"id"`
+		Nickname string    `json:"nickname"`
 	} `json:"user"`
 }
 
@@ -58,66 +59,63 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	var req RegisterRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		log.Printf("Error decoding request: %v", err)
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"message": "Invalid request format"})
+		http.Error(w, "Invalid request format", http.StatusBadRequest)
 		return
 	}
 
 	log.Printf("Received registration request for username: %s, nickname: %s", req.Username, req.Nickname)
 
-	// Start transaction
-	tx := h.db.Begin()
-	if tx.Error != nil {
-		log.Printf("Error starting transaction: %v", tx.Error)
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"message": "Database error"})
-		return
-	}
-	defer func() {
-		if r := recover(); r != nil {
-			tx.Rollback()
-		}
-	}()
-
 	// Validate required fields
-	if req.Username == "" || req.Password == "" {
+	if req.Username == "" || req.Password == "" || req.Nickname == "" {
 		log.Print("Missing required fields")
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"message": "Username and password are required"})
+		http.Error(w, "Username, password, and nickname are required", http.StatusBadRequest)
 		return
 	}
 
-	// Check both username and nickname uniqueness in a single query
-	var count int64
-	if err := tx.Model(&models.User{}).
-		Where("username = ? OR nickname = ?", req.Username, req.Nickname).
-		Count(&count).Error; err != nil {
-		log.Printf("Error checking availability: %v", err)
-		tx.Rollback()
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"message": "Error checking availability"})
+	// Start transaction
+	tx, err := h.store.BeginTx(r.Context())
+	if err != nil {
+		log.Printf("Error starting transaction: %v", err)
+		http.Error(w, "Database error", http.StatusInternalServerError)
+		return
+	}
+	defer tx.Rollback()
+
+	// Check username availability
+	exists, err := tx.CheckUsernameExists(r.Context(), req.Username)
+	if err != nil {
+		log.Printf("Error checking username availability: %v", err)
+		http.Error(w, "Error checking username availability", http.StatusInternalServerError)
+		return
+	}
+	if exists {
+		http.Error(w, "Username is already taken", http.StatusConflict)
 		return
 	}
 
-	log.Printf("Found %d existing users with same username/nickname", count)
-
-	if count > 0 {
-		tx.Rollback()
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"message": "Username or nickname is already taken"})
+	// Check nickname availability
+	exists, err = tx.CheckNicknameExists(r.Context(), req.Nickname)
+	if err != nil {
+		log.Printf("Error checking nickname availability: %v", err)
+		http.Error(w, "Error checking nickname availability", http.StatusInternalServerError)
+		return
+	}
+	if exists {
+		http.Error(w, "Nickname is already taken", http.StatusConflict)
 		return
 	}
 
+	// Hash password
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 	if err != nil {
 		log.Printf("Error hashing password: %v", err)
-		tx.Rollback()
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"message": "Error hashing password"})
+		http.Error(w, "Error processing password", http.StatusInternalServerError)
 		return
 	}
 
+	// Create user
 	user := &models.User{
+		ID:       uuid.New(),
 		Username: req.Username,
 		Password: string(hashedPassword),
 		Nickname: req.Nickname,
@@ -125,25 +123,19 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("Attempting to create user with username: %s, nickname: %s", user.Username, user.Nickname)
 
-	// Create user within transaction
-	if err := tx.Create(user).Error; err != nil {
+	if err := tx.CreateUser(r.Context(), user); err != nil {
 		log.Printf("Error creating user: %v", err)
-		tx.Rollback()
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"message": "Error creating user: " + err.Error()})
+		http.Error(w, "Error creating user", http.StatusInternalServerError)
 		return
 	}
 
-	// Commit transaction
-	if err := tx.Commit().Error; err != nil {
+	if err := tx.Commit(); err != nil {
 		log.Printf("Error committing transaction: %v", err)
-		tx.Rollback()
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"message": "Error saving user"})
+		http.Error(w, "Error saving user", http.StatusInternalServerError)
 		return
 	}
 
-	log.Printf("Successfully created user with ID: %d", user.ID)
+	log.Printf("Successfully created user with ID: %s", user.ID)
 
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(map[string]string{"message": "User created successfully"})
@@ -154,38 +146,33 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 	var req LoginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"message": "Invalid request format"})
+		http.Error(w, "Invalid request format", http.StatusBadRequest)
 		return
 	}
 
 	// Validate required fields
 	if req.Username == "" || req.Password == "" {
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"message": "Username and password are required"})
+		http.Error(w, "Username and password are required", http.StatusBadRequest)
 		return
 	}
 
 	// Find user by username
-	var user models.User
-	if err := h.db.Where("username = ?", req.Username).First(&user).Error; err != nil {
-		w.WriteHeader(http.StatusUnauthorized)
-		json.NewEncoder(w).Encode(map[string]string{"message": "Invalid credentials"})
+	user, err := h.store.GetUserByUsername(r.Context(), req.Username)
+	if err != nil {
+		http.Error(w, "Invalid credentials", http.StatusUnauthorized)
 		return
 	}
 
 	// Check password
 	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(req.Password)); err != nil {
-		w.WriteHeader(http.StatusUnauthorized)
-		json.NewEncoder(w).Encode(map[string]string{"message": "Invalid credentials"})
+		http.Error(w, "Invalid credentials", http.StatusUnauthorized)
 		return
 	}
 
-	// Generate JWT token using auth package
+	// Generate JWT token
 	token, err := auth.GenerateToken(user.ID)
 	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"message": "Error generating token"})
+		http.Error(w, "Error generating token", http.StatusInternalServerError)
 		return
 	}
 
@@ -193,61 +180,68 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	response := LoginResponse{
 		Token: token,
 		User: struct {
-			ID       uint   `json:"id"`
-			Nickname string `json:"nickname"`
+			ID       uuid.UUID `json:"id"`
+			Nickname string    `json:"nickname"`
 		}{
 			ID:       user.ID,
 			Nickname: user.Nickname,
 		},
 	}
 
-	// Write response
 	w.WriteHeader(http.StatusOK)
-	err = json.NewEncoder(w).Encode(response)
-	if err != nil {
-		// Log the error but don't try to write another response since headers are already sent
-		println("Error encoding response:", err.Error())
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		log.Printf("Error encoding response: %v", err)
 	}
 }
 
 func (h *AuthHandler) CheckUsernameAvailability(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
 	username := r.URL.Query().Get("username")
 	if username == "" {
-		w.WriteHeader(http.StatusBadRequest)
+		http.Error(w, "Username is required", http.StatusBadRequest)
 		return
 	}
 
-	var count int64
-	if err := h.db.Model(&models.User{}).Where("username = ?", username).Count(&count).Error; err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
+	exists, err := h.store.CheckUsernameExists(r.Context(), username)
+	if err != nil {
+		http.Error(w, "Error checking username availability", http.StatusInternalServerError)
 		return
 	}
 
-	if count > 0 {
-		w.WriteHeader(http.StatusConflict) // 409 Conflict for taken username
-		return
+	response := AvailabilityResponse{
+		Available: !exists,
+		Message:   "",
+	}
+	if exists {
+		response.Message = "Username is already taken"
 	}
 
-	w.WriteHeader(http.StatusOK) // 200 OK for available username
+	json.NewEncoder(w).Encode(response)
 }
 
 func (h *AuthHandler) CheckNicknameAvailability(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
 	nickname := r.URL.Query().Get("nickname")
 	if nickname == "" {
-		w.WriteHeader(http.StatusBadRequest)
+		http.Error(w, "Nickname is required", http.StatusBadRequest)
 		return
 	}
 
-	var count int64
-	if err := h.db.Model(&models.User{}).Where("nickname = ?", nickname).Count(&count).Error; err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
+	exists, err := h.store.CheckNicknameExists(r.Context(), nickname)
+	if err != nil {
+		http.Error(w, "Error checking nickname availability", http.StatusInternalServerError)
 		return
 	}
 
-	if count > 0 {
-		w.WriteHeader(http.StatusConflict) // 409 Conflict for taken nickname
-		return
+	response := AvailabilityResponse{
+		Available: !exists,
+		Message:   "",
+	}
+	if exists {
+		response.Message = "Nickname is already taken"
 	}
 
-	w.WriteHeader(http.StatusOK) // 200 OK for available nickname
+	json.NewEncoder(w).Encode(response)
 }

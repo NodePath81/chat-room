@@ -3,8 +3,8 @@ package handlers
 import (
 	"chat-room/auth"
 	"chat-room/config"
-	"chat-room/models"
 	"chat-room/s3"
+	"chat-room/store"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -13,42 +13,41 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/minio/minio-go/v7"
-	"gorm.io/gorm"
 )
 
 type AvatarHandler struct {
-	db *gorm.DB
+	store store.Store
 }
 
-func NewAvatarHandler(db *gorm.DB) *AvatarHandler {
-	return &AvatarHandler{db: db}
+func NewAvatarHandler(store store.Store) *AvatarHandler {
+	return &AvatarHandler{store: store}
 }
 
 // UploadAvatar handles direct file upload
 func (h *AvatarHandler) UploadAvatar(w http.ResponseWriter, r *http.Request) {
-	claims, ok := r.Context().Value("claims").(*auth.Claims)
-	if !ok || claims == nil {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+	userID := auth.GetUserIDFromContext(r)
+	if userID == uuid.Nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
 	// Parse multipart form
 	err := r.ParseMultipartForm(10 << 20) // 10 MB max
 	if err != nil {
-		http.Error(w, "failed to parse form", http.StatusBadRequest)
+		http.Error(w, "Failed to parse form", http.StatusBadRequest)
 		return
 	}
 
 	file, header, err := r.FormFile("avatar")
 	if err != nil {
-		http.Error(w, "failed to get file", http.StatusBadRequest)
+		http.Error(w, "Failed to get file", http.StatusBadRequest)
 		return
 	}
 	defer file.Close()
 
 	// Generate a unique filename
 	filename := fmt.Sprintf("%s%s", uuid.New().String(), path.Ext(header.Filename))
-	objectName := fmt.Sprintf("user-%d/%s", claims.UserID, filename)
+	objectName := fmt.Sprintf("user-%s/%s", userID.String(), filename)
 
 	cfg := config.GetConfig()
 	minioClient := s3.GetClient()
@@ -59,7 +58,7 @@ func (h *AvatarHandler) UploadAvatar(w http.ResponseWriter, r *http.Request) {
 	}
 	_, err = minioClient.PutObject(context.Background(), cfg.MinioBucketName, objectName, file, header.Size, opts)
 	if err != nil {
-		http.Error(w, "failed to upload file", http.StatusInternalServerError)
+		http.Error(w, "Failed to upload file", http.StatusInternalServerError)
 		return
 	}
 
@@ -69,16 +68,23 @@ func (h *AvatarHandler) UploadAvatar(w http.ResponseWriter, r *http.Request) {
 		objectName,
 	)
 
-	// Update user's avatar URL in the database
-	result := h.db.Model(&models.User{}).Where("id = ?", claims.UserID).Update("avatar_url", publicURL)
-	if result.Error != nil {
-		http.Error(w, "failed to update avatar URL", http.StatusInternalServerError)
+	// Get current user
+	user, err := h.store.GetUserByID(r.Context(), userID)
+	if err != nil {
+		http.Error(w, "Failed to get user", http.StatusInternalServerError)
+		return
+	}
+
+	// Update user's avatar URL
+	user.AvatarURL = publicURL
+	if err := h.store.UpdateUser(r.Context(), user); err != nil {
+		http.Error(w, "Failed to update avatar URL", http.StatusInternalServerError)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{
 		"avatarUrl": publicURL,
-		"message":   "avatar uploaded successfully",
+		"message":   "Avatar uploaded successfully",
 	})
 }

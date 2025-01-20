@@ -6,14 +6,15 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 )
 
 type SessionClaims struct {
-	SessionID uint `json:"session_id"`
+	SessionID uuid.UUID `json:"sessionId"`
 	jwt.RegisteredClaims
 }
 
-func GenerateSessionShareToken(sessionID uint, duration time.Duration) (string, error) {
+func GenerateSessionShareToken(sessionID uuid.UUID, duration time.Duration) (string, error) {
 	claims := SessionClaims{
 		SessionID: sessionID,
 		RegisteredClaims: jwt.RegisteredClaims{
