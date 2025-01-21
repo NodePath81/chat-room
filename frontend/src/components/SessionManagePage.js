@@ -184,9 +184,9 @@ const SessionManagePage = () => {
                             return (
                                 <div key={memberId} className="flex items-center justify-between border-b py-3">
                                     <div className="flex items-center space-x-3">
-                                        {member.avatarUrl ? (
+                                        {member.avatar_url ? (
                                             <img 
-                                                src={member.avatarUrl} 
+                                                src={member.avatar_url} 
                                                 alt={member.nickname} 
                                                 className="w-10 h-10 rounded-full object-cover"
                                             />
@@ -201,7 +201,7 @@ const SessionManagePage = () => {
                                             {member.nickname || 'Loading...'}
                                         </span>
                                     </div>
-                                    {memberId !== session?.creatorId && (
+                                    {memberId !== session?.creator_id && (
                                         <button
                                             onClick={() => handleKickMember(memberId)}
                                             className="text-red-500 hover:text-red-700 focus:outline-none"
