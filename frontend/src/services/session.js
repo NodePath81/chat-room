@@ -60,7 +60,7 @@ class SessionService {
         }
     }
 
-    async getMessages(sessionId, beforeId = null, limit = 1) {
+    async getMessages(sessionId, beforeId = null, limit = 20) {
         try {
             const url = new URL(API_ENDPOINTS.SESSIONS.GET_MESSAGES(sessionId));
             if (beforeId) {

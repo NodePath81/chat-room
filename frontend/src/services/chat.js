@@ -53,7 +53,7 @@ class ChatService {
         }
     }
 
-    async getMessages(beforeTimestamp = null, limit = 1) {
+    async getMessages(beforeTimestamp = null, limit = 20) {
         if (!this.currentSessionId) {
             throw new Error('No active session');
         }
