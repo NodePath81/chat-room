@@ -17,38 +17,46 @@ function ChatBoard({
     const messagesEndRef = useRef(null);
     const lastScrollTopRef = useRef(0);
     const oldHeightRef = useRef(0);
+    const readyToFetchRef = useRef(false);
 
-    useEffect(() => {
-        const messageList = messageListRef.current;
-        if (messageList) {
-            const handleScroll = () => {
-                const { scrollTop, scrollHeight, clientHeight } = messageList;
+    const handleScroll = (e) => {
+        const { scrollTop, scrollHeight, clientHeight } = e.target;
+        const isContentShorterThanContainer = scrollHeight <= clientHeight;
+        
+        // Allow triggering update zone even with short content
+        if (scrollTop < 50 || isContentShorterThanContainer) {
+            if (!showUpdateZone) {
+                onUpdateZoneChange(true, false);
+                readyToFetchRef.current = false;
+            } else if (!updateZoneExpanded && (scrollTop < lastScrollTopRef.current || isContentShorterThanContainer)) {
+                onUpdateZoneChange(true, true);
+                readyToFetchRef.current = true;
                 
-                // Update zone visibility based on scroll position
-                if (scrollTop < 20) {
-                    if (!showUpdateZone) {
-                        onUpdateZoneChange(true, false);
-                    } else if (!updateZoneExpanded && scrollTop < lastScrollTopRef.current) {
-                        onUpdateZoneChange(true, true);
+                // Reposition to show the oldest message
+                if (messages.length > 0) {
+                    const firstMessage = messageListRef.current.querySelector('[data-message-id]');
+                    if (firstMessage) {
+                        firstMessage.scrollIntoView({ block: 'start', behavior: 'smooth' });
                     }
-                } else if (scrollTop > 50) {
-                    onUpdateZoneChange(false, false);
                 }
-
-                // Check if scrolled to top for loading more messages
-                if (scrollTop === 0 && hasMore && !isLoadingMore) {
-                    oldHeightRef.current = scrollHeight;
-                    onScroll();
-                }
-                
-                // Update last scroll position
-                lastScrollTopRef.current = scrollTop;
-            };
-
-            messageList.addEventListener('scroll', handleScroll);
-            return () => messageList.removeEventListener('scroll', handleScroll);
+            }
+        } else {
+            onUpdateZoneChange(false, false);
+            readyToFetchRef.current = false;
         }
-    }, [hasMore, isLoadingMore, onScroll, showUpdateZone, updateZoneExpanded, onUpdateZoneChange]);
+
+        // Check if scrolled to top and ready to fetch
+        if ((scrollTop === 0 || isContentShorterThanContainer) && hasMore && !isLoadingMore) {
+            if (readyToFetchRef.current) {
+                oldHeightRef.current = scrollHeight;
+                onScroll();
+                readyToFetchRef.current = false;
+            }
+        }
+        
+        // Update last scroll position
+        lastScrollTopRef.current = scrollTop;
+    };
 
     // Preserve scroll position when new messages are loaded at the top
     useEffect(() => {
@@ -75,9 +83,16 @@ function ChatBoard({
     }, [messages]);
 
     return (
-        <div
+        <div 
             ref={messageListRef}
-            className="flex-1 overflow-y-auto p-4 space-y-4"
+            onScroll={handleScroll}
+            className="flex-1 overflow-y-scroll h-full px-4 space-y-4"
+            style={{ 
+                scrollbarWidth: 'thin',
+                scrollbarGutter: 'stable',
+                scrollbarColor: '#CBD5E1 transparent',
+                minHeight: '100%'
+            }}
         >
             {isLoading ? (
                 <div className="flex items-center justify-center h-full">
@@ -87,7 +102,7 @@ function ChatBoard({
                 <>
                     <div 
                         ref={updateZoneRef}
-                        className={`sticky top-0 left-0 right-0 transition-all duration-300 overflow-hidden ${
+                        className={`sticky top-0 left-0 right-0 transition-all duration-300 overflow-hidden bg-blue-50 rounded-lg ${
                             showUpdateZone ? 'mb-4' : 'mb-0'
                         } ${
                             updateZoneExpanded ? 'h-16 opacity-100' : 'h-0 opacity-0'
@@ -96,35 +111,39 @@ function ChatBoard({
                             transform: updateZoneExpanded ? 'translateY(0)' : 'translateY(-100%)'
                         }}
                     >
-                        <div className="flex items-center justify-center h-full bg-blue-50 rounded-lg">
+                        <div className="flex items-center justify-center h-full text-blue-600">
                             {isLoadingMore ? (
                                 <div className="flex items-center space-x-2">
-                                    <div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-                                    <span className="text-blue-600">Loading more messages...</span>
+                                    <div className="w-5 h-5 border-3 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                                    <span>Loading messages...</span>
                                 </div>
                             ) : hasMore ? (
-                                <span className="text-blue-600">
-                                    {updateZoneExpanded ? 'Loading more messages...' : 'Scroll up to load more'}
-                                </span>
+                                <span>{readyToFetchRef.current ? "Release to load more" : "Pull down to load more"}</span>
                             ) : (
                                 <span className="text-gray-500">No more messages</span>
                             )}
                         </div>
                     </div>
 
-                    <div className="space-y-4 min-h-full">
-                        {messages.map((msg, index) => (
-                            msg && msg.content && (
-                                <div key={msg.id || index} data-message-id={msg.id}>
-                                    <MessageBubble 
-                                        message={msg} 
-                                        user={users[msg.user_id]} 
-                                    />
-                                </div>
-                            )
+                    {/* Ensure minimum height for short content */}
+                    <div className="min-h-full">
+                        {!hasMore && messages.length > 0 && (
+                            <div className="text-center py-4 text-gray-500 text-sm">
+                                Beginning of conversation
+                            </div>
+                        )}
+                        
+                        {messages.map((message, index) => (
+                            <div key={message.id || index} data-message-id={message.id}>
+                                <MessageBubble
+                                    message={message}
+                                    user={users[message.user_id]}
+                                />
+                            </div>
                         ))}
+                        
+                        <div ref={messagesEndRef} />
                     </div>
-                    <div ref={messagesEndRef} />
                 </>
             )}
         </div>
