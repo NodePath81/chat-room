@@ -85,7 +85,6 @@ func generateTestUser() *models.User {
 		Nickname:  fmt.Sprintf("Test User %s", uuid.NewString()[:8]),
 		AvatarURL: "https://example.com/avatar.jpg",
 		CreatedAt: time.Now().UTC(),
-		UpdatedAt: time.Now().UTC(),
 	}
 }
 
@@ -95,18 +94,16 @@ func generateTestSession(creatorID uuid.UUID) *models.Session {
 		Name:      fmt.Sprintf("test_session_%s", uuid.NewString()[:8]),
 		CreatorID: creatorID,
 		CreatedAt: time.Now().UTC(),
-		UpdatedAt: time.Now().UTC(),
 	}
 }
 
 func generateTestMessage(userID, sessionID uuid.UUID) *models.Message {
 	return &models.Message{
 		ID:        uuid.New(),
-		Type:      "text",
+		Type:      models.MessageTypeText,
 		Content:   fmt.Sprintf("Test message %s", uuid.NewString()[:8]),
 		UserID:    userID,
 		SessionID: sessionID,
-		CreatedAt: time.Now().UTC(),
-		UpdatedAt: time.Now().UTC(),
+		Timestamp: time.Now().UTC(),
 	}
 }

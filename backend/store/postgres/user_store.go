@@ -14,12 +14,13 @@ func (s *Store) CreateUser(ctx context.Context, user *models.User) error {
 	if user.ID == uuid.Nil {
 		user.ID = uuid.New()
 	}
-	user.CreatedAt = time.Now().UTC()
-	user.UpdatedAt = user.CreatedAt
+	if user.CreatedAt.IsZero() {
+		user.CreatedAt = time.Now().UTC()
+	}
 
 	return s.loader.exec(ctx, CreateUserQuery,
 		user.ID, user.Username, user.Password, user.Nickname,
-		user.AvatarURL, user.CreatedAt, user.UpdatedAt)
+		user.AvatarURL, user.CreatedAt)
 }
 
 func (s *Store) GetUserByID(ctx context.Context, id uuid.UUID) (*models.User, error) {
@@ -27,7 +28,7 @@ func (s *Store) GetUserByID(ctx context.Context, id uuid.UUID) (*models.User, er
 	err := s.loader.queryRow(ctx, GetUserByIDQuery,
 		func(row pgx.Row) error {
 			return row.Scan(&user.ID, &user.Username, &user.Password,
-				&user.Nickname, &user.AvatarURL, &user.CreatedAt, &user.UpdatedAt)
+				&user.Nickname, &user.AvatarURL, &user.CreatedAt)
 		},
 		id)
 	if err != nil {
@@ -41,7 +42,7 @@ func (s *Store) GetUserByUsername(ctx context.Context, username string) (*models
 	err := s.loader.queryRow(ctx, GetUserByUsernameQuery,
 		func(row pgx.Row) error {
 			return row.Scan(&user.ID, &user.Username, &user.Password,
-				&user.Nickname, &user.AvatarURL, &user.CreatedAt, &user.UpdatedAt)
+				&user.Nickname, &user.AvatarURL, &user.CreatedAt)
 		},
 		username)
 	if err != nil {
@@ -51,9 +52,8 @@ func (s *Store) GetUserByUsername(ctx context.Context, username string) (*models
 }
 
 func (s *Store) UpdateUser(ctx context.Context, user *models.User) error {
-	user.UpdatedAt = time.Now().UTC()
 	return s.loader.exec(ctx, UpdateUserQuery,
-		user.ID, user.Username, user.Nickname, user.AvatarURL, user.UpdatedAt)
+		user.ID, user.Username, user.Nickname, user.AvatarURL)
 }
 
 func (s *Store) DeleteUser(ctx context.Context, id uuid.UUID) error {

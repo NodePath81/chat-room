@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { API_ENDPOINTS } from '../services/api';
+import { API_ENDPOINTS, api } from '../services/api';
 import { authService } from '../services/auth';
 
 const SessionManagePage = () => {
@@ -25,17 +25,7 @@ const SessionManagePage = () => {
             setError('');
 
             // Check role first
-            const roleResponse = await fetch(`${API_ENDPOINTS.SESSIONS.CHECK_ROLE(sessionId)}`, {
-                headers: {
-                    'Authorization': `Bearer ${authService.getToken()}`
-                }
-            });
-
-            if (!roleResponse.ok) {
-                throw new Error('Failed to check role');
-            }
-
-            const roleData = await roleResponse.json();
+            const roleData = await api.sessions.checkRole(sessionId);
             setRole(roleData.role);
 
             // If not creator, redirect to home
@@ -45,31 +35,11 @@ const SessionManagePage = () => {
             }
 
             // Fetch session details
-            const sessionResponse = await fetch(`${API_ENDPOINTS.SESSIONS.GET(sessionId)}`, {
-                headers: {
-                    'Authorization': `Bearer ${authService.getToken()}`
-                }
-            });
-
-            if (!sessionResponse.ok) {
-                throw new Error('Failed to fetch session');
-            }
-
-            const sessionData = await sessionResponse.json();
+            const sessionData = await api.sessions.get(sessionId);
             setSession(sessionData);
 
             // Fetch members
-            const membersResponse = await fetch(`${API_ENDPOINTS.SESSIONS.GET_MEMBERS(sessionId)}`, {
-                headers: {
-                    'Authorization': `Bearer ${authService.getToken()}`
-                }
-            });
-
-            if (!membersResponse.ok) {
-                throw new Error('Failed to fetch members');
-            }
-
-            const membersData = await membersResponse.json();
+            const membersData = await api.sessions.listMembers(sessionId);
             setMembers(membersData.members);
 
         } catch (err) {
@@ -82,20 +52,7 @@ const SessionManagePage = () => {
     const handleCreateShareLink = async () => {
         try {
             setError('');
-            const response = await fetch(`${API_ENDPOINTS.SESSIONS.CREATE_SHARE_LINK(sessionId)}`, {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${authService.getToken()}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ durationDays: duration })
-            });
-
-            if (!response.ok) {
-                throw new Error('Failed to create share link');
-            }
-
-            const data = await response.json();
+            const data = await api.sessions.createShareLink(sessionId, { durationDays: duration });
             const fullShareLink = `${window.location.origin}/share?token=${data.token}`;
             setShareLink(fullShareLink);
         } catch (err) {
@@ -106,16 +63,7 @@ const SessionManagePage = () => {
     const handleKickMember = async (memberId) => {
         try {
             setError('');
-            const response = await fetch(`${API_ENDPOINTS.SESSIONS.KICK_MEMBER(sessionId)}?member=${memberId}`, {
-                headers: {
-                    'Authorization': `Bearer ${authService.getToken()}`
-                }
-            });
-
-            if (!response.ok) {
-                throw new Error('Failed to kick member');
-            }
-
+            await api.sessions.kickMember(sessionId, memberId);
             // Refresh members list
             fetchSessionData();
         } catch (err) {
@@ -130,16 +78,7 @@ const SessionManagePage = () => {
 
         try {
             setError('');
-            const response = await fetch(`${API_ENDPOINTS.SESSIONS.REMOVE(sessionId)}`, {
-                headers: {
-                    'Authorization': `Bearer ${authService.getToken()}`
-                }
-            });
-
-            if (!response.ok) {
-                throw new Error('Failed to remove session');
-            }
-
+            await api.sessions.remove(sessionId);
             navigate('/');
         } catch (err) {
             setError(err.message);
@@ -148,18 +87,11 @@ const SessionManagePage = () => {
 
     const fetchMemberDetails = async (memberId) => {
         try {
-            const response = await fetch(API_ENDPOINTS.USERS.GET(memberId), {
-                headers: {
-                    'Authorization': `Bearer ${authService.getToken()}`
-                }
-            });
-            if (response.ok) {
-                const userData = await response.json();
-                setMemberDetails(prev => ({
-                    ...prev,
-                    [memberId]: userData
-                }));
-            }
+            const userData = await api.users.get(memberId);
+            setMemberDetails(prev => ({
+                ...prev,
+                [memberId]: userData
+            }));
         } catch (error) {
             console.error('Error fetching member details:', error);
         }

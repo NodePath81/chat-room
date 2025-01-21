@@ -28,7 +28,7 @@ type UpdateUsernameRequest struct {
 }
 
 type UserSessionResponse struct {
-	SessionID uuid.UUID `json:"sessionId"`
+	SessionID uuid.UUID `json:"session_id"`
 	Role      string    `json:"role"`
 }
 
@@ -48,10 +48,10 @@ func (h *UserHandler) GetUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response := map[string]interface{}{
-		"id":        user.ID,
-		"username":  user.Username,
-		"nickname":  user.Nickname,
-		"avatarUrl": user.AvatarURL,
+		"id":         user.ID,
+		"username":   user.Username,
+		"nickname":   user.Nickname,
+		"avatar_url": user.AvatarURL,
 	}
 
 	json.NewEncoder(w).Encode(response)

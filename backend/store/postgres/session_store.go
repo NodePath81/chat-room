@@ -14,8 +14,9 @@ func (s *Store) CreateSession(ctx context.Context, session *models.Session) erro
 	if session.ID == uuid.Nil {
 		session.ID = uuid.New()
 	}
-	session.CreatedAt = time.Now().UTC()
-	session.UpdatedAt = session.CreatedAt
+	if session.CreatedAt.IsZero() {
+		session.CreatedAt = time.Now().UTC()
+	}
 
 	tx, err := s.BeginTx(ctx)
 	if err != nil {
@@ -25,7 +26,7 @@ func (s *Store) CreateSession(ctx context.Context, session *models.Session) erro
 
 	// Create the session
 	err = tx.(*Tx).loader.exec(ctx, CreateSessionQuery,
-		session.ID, session.Name, session.CreatorID, session.CreatedAt, session.UpdatedAt)
+		session.ID, session.Name, session.CreatorID, session.CreatedAt)
 	if err != nil {
 		return err
 	}
@@ -45,7 +46,7 @@ func (s *Store) GetSessionByID(ctx context.Context, id uuid.UUID) (*models.Sessi
 	err := s.loader.queryRow(ctx, GetSessionByIDQuery,
 		func(row pgx.Row) error {
 			return row.Scan(&session.ID, &session.Name, &session.CreatorID,
-				&session.CreatedAt, &session.UpdatedAt)
+				&session.CreatedAt)
 		},
 		id)
 	if err != nil {
@@ -55,9 +56,8 @@ func (s *Store) GetSessionByID(ctx context.Context, id uuid.UUID) (*models.Sessi
 }
 
 func (s *Store) UpdateSession(ctx context.Context, session *models.Session) error {
-	session.UpdatedAt = time.Now().UTC()
 	return s.loader.exec(ctx, UpdateSessionQuery,
-		session.ID, session.Name, session.UpdatedAt)
+		session.ID, session.Name)
 }
 
 func (s *Store) DeleteSession(ctx context.Context, id uuid.UUID) error {

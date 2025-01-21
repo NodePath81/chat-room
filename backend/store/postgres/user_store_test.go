@@ -22,7 +22,6 @@ func TestUserStore(t *testing.T) {
 		require.NoError(t, err)
 		assert.NotEqual(t, uuid.Nil, user.ID)
 		assert.False(t, user.CreatedAt.IsZero())
-		assert.False(t, user.UpdatedAt.IsZero())
 	})
 
 	t.Run("GetUserByID", func(t *testing.T) {
@@ -39,6 +38,7 @@ func TestUserStore(t *testing.T) {
 		assert.Equal(t, user.Password, retrieved.Password)
 		assert.Equal(t, user.Nickname, retrieved.Nickname)
 		assert.Equal(t, user.AvatarURL, retrieved.AvatarURL)
+		assert.WithinDuration(t, user.CreatedAt, retrieved.CreatedAt, time.Second)
 	})
 
 	t.Run("GetUserByUsername", func(t *testing.T) {
@@ -55,6 +55,7 @@ func TestUserStore(t *testing.T) {
 		assert.Equal(t, user.Password, retrieved.Password)
 		assert.Equal(t, user.Nickname, retrieved.Nickname)
 		assert.Equal(t, user.AvatarURL, retrieved.AvatarURL)
+		assert.WithinDuration(t, user.CreatedAt, retrieved.CreatedAt, time.Second)
 	})
 
 	t.Run("UpdateUser", func(t *testing.T) {
@@ -66,10 +67,6 @@ func TestUserStore(t *testing.T) {
 		// Update user fields
 		user.Nickname = "Updated Nickname"
 		user.AvatarURL = "https://example.com/new-avatar.jpg"
-		originalUpdatedAt := user.UpdatedAt
-
-		// Wait a moment to ensure UpdatedAt will be different
-		time.Sleep(time.Millisecond * 10)
 
 		err = store.UpdateUser(helper.ctx, user)
 		require.NoError(t, err)
@@ -79,7 +76,6 @@ func TestUserStore(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, user.Nickname, retrieved.Nickname)
 		assert.Equal(t, user.AvatarURL, retrieved.AvatarURL)
-		assert.True(t, retrieved.UpdatedAt.After(originalUpdatedAt))
 	})
 
 	t.Run("DeleteUser", func(t *testing.T) {

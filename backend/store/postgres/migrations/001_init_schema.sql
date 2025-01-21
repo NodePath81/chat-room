@@ -5,16 +5,14 @@ CREATE TABLE users (
     password    TEXT NOT NULL,
     nickname    TEXT NOT NULL UNIQUE,
     avatar_url  TEXT,
-    created_at  TIMESTAMP WITH TIME ZONE NOT NULL,
-    updated_at  TIMESTAMP WITH TIME ZONE NOT NULL
+    created_at  TIMESTAMP WITH TIME ZONE NOT NULL
 );
 
 CREATE TABLE sessions (
     id          UUID PRIMARY KEY,
     name        TEXT NOT NULL,
     creator_id  UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    created_at  TIMESTAMP WITH TIME ZONE NOT NULL,
-    updated_at  TIMESTAMP WITH TIME ZONE NOT NULL
+    created_at  TIMESTAMP WITH TIME ZONE NOT NULL
 );
 
 CREATE TABLE user_sessions (
@@ -31,11 +29,10 @@ CREATE TABLE messages (
     content     TEXT NOT NULL,
     user_id     UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     session_id  UUID NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
-    created_at  TIMESTAMP WITH TIME ZONE NOT NULL,
-    updated_at  TIMESTAMP WITH TIME ZONE NOT NULL
+    timestamp   TIMESTAMP WITH TIME ZONE NOT NULL
 );
 
-CREATE INDEX messages_session_id_created_at_idx ON messages(session_id, created_at DESC);
+CREATE INDEX messages_session_id_timestamp_idx ON messages(session_id, timestamp DESC);
 CREATE INDEX user_sessions_user_id_idx ON user_sessions(user_id);
 CREATE INDEX user_sessions_session_id_idx ON user_sessions(session_id);
 

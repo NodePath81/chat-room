@@ -64,7 +64,7 @@ function ChatRoom() {
                     ...prev,
                     [userId]: {
                         nickname: userData.nickname,
-                        avatarUrl: userData.avatarUrl
+                        avatarUrl: userData.avatar_url
                     }
                 }));
             }
@@ -96,7 +96,7 @@ function ChatRoom() {
             }
 
             const data = await response.json();
-            const userIds = [...new Set(data.messages.map(msg => msg.userId))];
+            const userIds = [...new Set(data.messages.map(msg => msg.user_id))];
             userIds.forEach(userId => fetchUsername(userId));
 
             if (beforeId) {
@@ -166,7 +166,8 @@ function ChatRoom() {
     }, []);
 
     useEffect(() => {
-        const currentSessionId = parseInt(sessionId, 10);
+        // Remove parseInt as sessionId should remain a string for UUID
+        const currentSessionId = sessionId;
 
         async function initializeChat() {
             setIsLoading(true);
@@ -182,7 +183,7 @@ function ChatRoom() {
                 setUserRole(role);
                 setIsJoined(true);
                 
-                // Load initial messages
+                // Load initial messages through API
                 await loadMessages();
 
                 // Ensure we're at the bottom after initial load
@@ -202,8 +203,8 @@ function ChatRoom() {
                     const oldHeight = messageListRef.current?.scrollHeight || 0;
 
                     setMessages(prev => [...prev, message]);
-                    if (message.userId) {
-                        fetchUsername(message.userId);
+                    if (message.user_id) {
+                        fetchUsername(message.user_id);
                     }
 
                     // After state update, adjust scroll position if user was not at bottom
@@ -299,21 +300,15 @@ function ChatRoom() {
                 const data = await response.json();
                 console.log('Image uploaded successfully:', data);
                 
-                // Send image message through WebSocket
-                WebSocketService.sendMessage({
-                    type: 'image',
-                    content: data.url,
-                    sessionId: parseInt(sessionId, 10)
-                });
-
+                // No need to send via WebSocket - the API handler will broadcast
                 clearImageSelection();
             } else if (newMessage.trim()) {
                 console.log('Sending text message:', newMessage.trim());
-                // Send text message
+                // Send text message via WebSocket
                 WebSocketService.sendMessage({
                     type: 'text',
                     content: newMessage.trim(),
-                    sessionId: parseInt(sessionId, 10)
+                    sessionId: sessionId
                 });
                 setNewMessage('');
             }
@@ -476,7 +471,7 @@ function ChatRoom() {
                                         <div key={msg.id || index} data-message-id={msg.id}>
                                             <MessageBubble 
                                                 message={msg} 
-                                                user={users[msg.userId]} 
+                                                user={users[msg.user_id]} 
                                             />
                                         </div>
                                     )

@@ -28,7 +28,7 @@ func (s *Store) GetUserSessions(ctx context.Context, userID uuid.UUID) ([]*model
 				session := &models.Session{}
 				err := rows.Scan(
 					&session.ID, &session.Name, &session.CreatorID,
-					&session.CreatedAt, &session.UpdatedAt,
+					&session.CreatedAt,
 				)
 				if err != nil {
 					return err
@@ -52,7 +52,7 @@ func (s *Store) GetSessionUsers(ctx context.Context, sessionID uuid.UUID) ([]*mo
 				user := &models.User{}
 				err := rows.Scan(
 					&user.ID, &user.Username, &user.Nickname,
-					&user.AvatarURL, &user.CreatedAt, &user.UpdatedAt,
+					&user.AvatarURL, &user.CreatedAt,
 				)
 				if err != nil {
 					return err

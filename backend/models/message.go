@@ -17,8 +17,7 @@ type Message struct {
 	ID        uuid.UUID   `json:"id"`
 	Type      MessageType `json:"type"`
 	Content   string      `json:"content"`
-	UserID    uuid.UUID   `json:"userId"`
-	SessionID uuid.UUID   `json:"sessionId"`
-	CreatedAt time.Time   `json:"createdAt"`
-	UpdatedAt time.Time   `json:"updatedAt"`
+	UserID    uuid.UUID   `json:"user_id"`
+	SessionID uuid.UUID   `json:"session_id"`
+	Timestamp time.Time   `json:"timestamp"`
 }

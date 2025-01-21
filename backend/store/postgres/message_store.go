@@ -14,12 +14,13 @@ func (s *Store) CreateMessage(ctx context.Context, message *models.Message) erro
 	if message.ID == uuid.Nil {
 		message.ID = uuid.New()
 	}
-	message.CreatedAt = time.Now().UTC()
-	message.UpdatedAt = message.CreatedAt
+	if message.Timestamp.IsZero() {
+		message.Timestamp = time.Now().UTC()
+	}
 
 	return s.loader.exec(ctx, CreateMessageQuery,
 		message.ID, message.Type, message.Content, message.UserID,
-		message.SessionID, message.CreatedAt, message.UpdatedAt)
+		message.SessionID, message.Timestamp)
 }
 
 func (s *Store) GetMessagesBySessionID(ctx context.Context, sessionID uuid.UUID, limit int, before time.Time) ([]*models.Message, error) {
@@ -30,7 +31,7 @@ func (s *Store) GetMessagesBySessionID(ctx context.Context, sessionID uuid.UUID,
 				msg := &models.Message{}
 				err := rows.Scan(
 					&msg.ID, &msg.Type, &msg.Content, &msg.UserID,
-					&msg.SessionID, &msg.CreatedAt, &msg.UpdatedAt,
+					&msg.SessionID, &msg.Timestamp,
 				)
 				if err != nil {
 					return err

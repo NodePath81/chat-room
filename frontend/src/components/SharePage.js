@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { API_ENDPOINTS } from '../services/api';
+import { API_ENDPOINTS, api } from '../services/api';
 import { authService } from '../services/auth';
 
 const SharePage = () => {
@@ -55,18 +55,7 @@ const SharePage = () => {
         setIsLoading(true);
 
         try {
-            const response = await fetch(`${API_ENDPOINTS.SESSIONS.JOIN}?token=${token}`, {
-                headers: {
-                    'Authorization': `Bearer ${authService.getToken()}`,
-                    'Content-Type': 'application/json'
-                }
-            });
-
-            if (!response.ok) {
-                throw new Error('Failed to join session');
-            }
-
-            const data = await response.json();
+            const data = await api.sessions.join(token);
             navigate(`/chat/${data.session_id}`);
         } catch (error) {
             console.error('Error joining session:', error);

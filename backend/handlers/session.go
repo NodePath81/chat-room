@@ -45,7 +45,6 @@ func (h *SessionHandler) CreateSession(w http.ResponseWriter, r *http.Request) {
 		Name:      req.Name,
 		CreatorID: userID,
 		CreatedAt: time.Now().UTC(),
-		UpdatedAt: time.Now().UTC(),
 	}
 
 	if err := h.store.CreateSession(r.Context(), session); err != nil {
@@ -290,7 +289,7 @@ func (h *SessionHandler) KickMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	memberID, err := uuid.Parse(r.URL.Query().Get("member"))
+	memberID, err := uuid.Parse(r.URL.Query().Get("memberId"))
 	if err != nil {
 		http.Error(w, "Invalid member ID", http.StatusBadRequest)
 		return
@@ -417,18 +416,9 @@ func (h *SessionHandler) GetShareInfo(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response)
 }
 
-type MessageResponse struct {
-	ID        uuid.UUID          `json:"id"`
-	Content   string             `json:"content"`
-	UserID    uuid.UUID          `json:"userId"`
-	CreatedAt time.Time          `json:"timestamp"`
-	Type      models.MessageType `json:"type"`
-	MsgType   models.MessageType `json:"msgType"`
-}
-
 type GetMessagesResponse struct {
-	Messages []MessageResponse `json:"messages"`
-	HasMore  bool              `json:"hasMore"`
+	Messages []models.Message `json:"messages"`
+	HasMore  bool             `json:"has_more"`
 }
 
 func (h *SessionHandler) GetMessages(w http.ResponseWriter, r *http.Request) {
@@ -477,18 +467,18 @@ func (h *SessionHandler) GetMessages(w http.ResponseWriter, r *http.Request) {
 
 	// Convert to response format
 	response := GetMessagesResponse{
-		Messages: make([]MessageResponse, len(messages)),
+		Messages: make([]models.Message, len(messages)),
 		HasMore:  hasMore,
 	}
 
 	for i, msg := range messages {
-		response.Messages[i] = MessageResponse{
+		response.Messages[i] = models.Message{
 			ID:        msg.ID,
 			Content:   msg.Content,
 			UserID:    msg.UserID,
-			CreatedAt: msg.CreatedAt,
+			SessionID: msg.SessionID,
+			Timestamp: msg.Timestamp,
 			Type:      msg.Type,
-			MsgType:   msg.Type,
 		}
 	}
 

@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { authService } from '../services/auth';
-import { API_ENDPOINTS } from '../services/api';
-import SessionService from '../services/session';
+import { api } from '../services/api';
 
 function HomePage() {
     const [sessions, setSessions] = useState([]);
@@ -25,15 +24,7 @@ function HomePage() {
 
     const fetchUserSessions = async () => {
         try {
-            const response = await fetch(API_ENDPOINTS.USERS.GET_SESSIONS, {
-                headers: {
-                    'Authorization': `Bearer ${authService.getToken()}`
-                }
-            });
-            if (!response.ok) {
-                throw new Error('Failed to fetch user sessions');
-            }
-            const data = await response.json();
+            const data = await api.users.getSessions();
             setUserSessions(data);
         } catch (error) {
             console.error('Error fetching user sessions:', error);
@@ -42,18 +33,10 @@ function HomePage() {
 
     const fetchSessions = async () => {
         try {
-            const response = await fetch(API_ENDPOINTS.SESSIONS.LIST, {
-                headers: {
-                    'Authorization': `Bearer ${authService.getToken()}`
-                }
-            });
-            if (!response.ok) {
-                throw new Error('Failed to fetch sessions');
-            }
-            const data = await response.json();
+            const data = await api.sessions.list();
             setSessions(data);
         } catch (error) {
-            console.error('Fetch error:', error);
+            console.error('Error fetching sessions:', error);
         }
     };
 
@@ -61,29 +44,16 @@ function HomePage() {
         if (!newSessionName.trim()) return;
 
         try {
-            const response = await fetch(API_ENDPOINTS.SESSIONS.CREATE, {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${authService.getToken()}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ name: newSessionName })
-            });
-
-            if (!response.ok) {
-                throw new Error('Failed to create session');
-            }
-
-            const newSession = await response.json();
+            const newSession = await api.sessions.create({ name: newSessionName });
             setNewSessionName('');
             await fetchSessions();
             await fetchUserSessions();
             
-            if (newSession && newSession.ID) {
-                await handleJoinSession(newSession.ID);
+            if (newSession && newSession.id) {
+                await handleJoinSession(newSession.id);
             }
         } catch (error) {
-            console.error('Creation error:', error);
+            console.error('Error creating session:', error);
         }
     };
 
@@ -105,9 +75,9 @@ function HomePage() {
                         onClick={() => navigate('/profile')}
                         className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
                     >
-                        {user?.avatarUrl ? (
+                        {user?.avatar_url ? (
                             <img
-                                src={user.avatarUrl}
+                                src={user.avatar_url}
                                 alt="Profile"
                                 className="w-6 h-6 rounded-full object-cover"
                             />
@@ -123,13 +93,13 @@ function HomePage() {
             <div className="mb-8">
                 <h2 className="text-xl font-semibold mb-4">Your Sessions</h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {sessions.filter(session => userSessions.some(us => us.session_id === session.ID)).map(session => (
-                        <div key={session.ID} className="bg-white rounded-lg shadow-md p-4">
+                    {sessions.filter(session => userSessions.some(us => us.session_id === session.id)).map(session => (
+                        <div key={session.id} className="bg-white rounded-lg shadow-md p-4">
                             <div className="flex justify-between items-center mb-2">
                                 <h3 className="text-lg font-medium">{session.name}</h3>
-                                {getUserSessionRole(session.ID) === 'creator' && (
+                                {getUserSessionRole(session.id) === 'creator' && (
                                     <button
-                                        onClick={() => navigate(`/sessions/${session.ID}/manage`)}
+                                        onClick={() => navigate(`/sessions/${session.id}/manage`)}
                                         className="text-gray-600 hover:text-gray-800"
                                     >
                                         <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
@@ -139,10 +109,10 @@ function HomePage() {
                                 )}
                             </div>
                             <p className="text-sm text-gray-600 mb-4">
-                                {session.Users?.length || 0} members
+                                {session.users?.length || 0} members
                             </p>
                             <button
-                                onClick={() => handleJoinSession(session.ID)}
+                                onClick={() => handleJoinSession(session.id)}
                                 className="w-full px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
                             >
                                 Enter Chat

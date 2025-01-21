@@ -1,4 +1,4 @@
-import { API_ENDPOINTS } from '../config';
+import { API_ENDPOINTS } from './api';
 
 export class WebSocketService {
   constructor() {
@@ -22,27 +22,35 @@ export class WebSocketService {
     this.connections.set(sessionId, connection);
 
     const setupWebSocket = () => {
-      connection.ws = new WebSocket(`${process.env.REACT_APP_WS_URL || 'ws://localhost:8080'}/ws?sessionId=${sessionId}`);
+      connection.ws = new WebSocket(API_ENDPOINTS.WEBSOCKET.CONNECT(sessionId));
 
       connection.ws.onopen = () => {
         // Send authentication message
         const token = localStorage.getItem('token');
         connection.ws.send(JSON.stringify({ token }));
         connection.reconnectAttempts = 0;
+        console.log('WebSocket connection established for session:', sessionId);
       };
 
       connection.ws.onmessage = (event) => {
-        const data = JSON.parse(event.data);
-        connection.messageHandlers.forEach(handler => handler(data));
+        try {
+          const data = JSON.parse(event.data);
+          console.log('Received WebSocket message:', data);
+          connection.messageHandlers.forEach(handler => handler(data));
+        } catch (error) {
+          console.error('Error handling WebSocket message:', error);
+        }
       };
 
-      connection.ws.onclose = () => {
+      connection.ws.onclose = (event) => {
+        console.log('WebSocket connection closed:', event.code, event.reason);
         // Only attempt to reconnect if shouldReconnect is true and connection still exists
         if (connection.shouldReconnect && 
             this.connections.has(sessionId) && 
             connection.reconnectAttempts < this.maxReconnectAttempts) {
           setTimeout(() => {
             connection.reconnectAttempts++;
+            console.log('Attempting to reconnect WebSocket, attempt:', connection.reconnectAttempts);
             setupWebSocket();
           }, Math.min(1000 * Math.pow(2, connection.reconnectAttempts), 30000));
         } else {
@@ -51,7 +59,8 @@ export class WebSocketService {
         }
       };
 
-      connection.ws.onerror = () => {
+      connection.ws.onerror = (error) => {
+        console.error('WebSocket error:', error);
         if (connection.ws) {
           connection.ws.close();
         }

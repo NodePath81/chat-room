@@ -129,7 +129,7 @@ const UserPage = () => {
             const data = await response.json();
 
             if (response.ok) {
-                const updatedUser = { ...user, avatarUrl: data.avatarUrl };
+                const updatedUser = { ...user, avatar_url: data.avatar_url };
                 authService.updateStoredUser(updatedUser);
                 setUser(updatedUser);
                 setSelectedFile(null);
@@ -160,9 +160,9 @@ const UserPage = () => {
                     <div className="flex flex-col items-center space-y-4">
                         <div className="relative">
                             <div className="w-32 h-32 rounded-full overflow-hidden bg-gray-200">
-                                {user?.avatarUrl ? (
+                                {user?.avatar_url ? (
                                     <img
-                                        src={user.avatarUrl}
+                                        src={user.avatar_url}
                                         alt="Profile"
                                         className="w-full h-full object-cover"
                                     />

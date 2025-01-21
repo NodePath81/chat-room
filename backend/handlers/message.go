@@ -96,8 +96,7 @@ func (h *MessageHandler) UploadMessageImage(w http.ResponseWriter, r *http.Reque
 		Content:   publicURL,
 		UserID:    userID,
 		SessionID: sessionID,
-		CreatedAt: time.Now().UTC(),
-		UpdatedAt: time.Now().UTC(),
+		Timestamp: time.Now().UTC(),
 	}
 
 	if err := h.store.CreateMessage(r.Context(), message); err != nil {
@@ -108,7 +107,8 @@ func (h *MessageHandler) UploadMessageImage(w http.ResponseWriter, r *http.Reque
 	// Broadcast the message through WebSocket
 	h.hub.broadcast(sessionID, message)
 
-	json.NewEncoder(w).Encode(map[string]string{
-		"url": publicURL,
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"url":       publicURL,
+		"messageId": message.ID,
 	})
 }

@@ -27,7 +27,6 @@ func TestSessionStore(t *testing.T) {
 		require.NoError(t, err)
 		assert.NotEqual(t, uuid.Nil, session.ID)
 		assert.False(t, session.CreatedAt.IsZero())
-		assert.False(t, session.UpdatedAt.IsZero())
 	})
 
 	t.Run("GetSessionByID", func(t *testing.T) {
@@ -43,7 +42,6 @@ func TestSessionStore(t *testing.T) {
 		assert.Equal(t, session.Name, retrieved.Name)
 		assert.Equal(t, session.CreatorID, retrieved.CreatorID)
 		assert.WithinDuration(t, session.CreatedAt, retrieved.CreatedAt, time.Second)
-		assert.WithinDuration(t, session.UpdatedAt, retrieved.UpdatedAt, time.Second)
 	})
 
 	t.Run("UpdateSession", func(t *testing.T) {
@@ -54,10 +52,6 @@ func TestSessionStore(t *testing.T) {
 
 		// Update session fields
 		session.Name = "Updated Session Name"
-		originalUpdatedAt := session.UpdatedAt
-
-		// Wait a moment to ensure UpdatedAt will be different
-		time.Sleep(time.Millisecond * 10)
 
 		err = store.UpdateSession(helper.ctx, session)
 		require.NoError(t, err)
@@ -66,7 +60,6 @@ func TestSessionStore(t *testing.T) {
 		retrieved, err := store.GetSessionByID(helper.ctx, session.ID)
 		require.NoError(t, err)
 		assert.Equal(t, session.Name, retrieved.Name)
-		assert.True(t, retrieved.UpdatedAt.After(originalUpdatedAt))
 	})
 
 	t.Run("DeleteSession", func(t *testing.T) {

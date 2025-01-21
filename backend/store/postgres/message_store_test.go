@@ -30,8 +30,7 @@ func TestMessageStore(t *testing.T) {
 		err := store.CreateMessage(helper.ctx, message)
 		require.NoError(t, err)
 		assert.NotEqual(t, uuid.Nil, message.ID)
-		assert.False(t, message.CreatedAt.IsZero())
-		assert.False(t, message.UpdatedAt.IsZero())
+		assert.False(t, message.Timestamp.IsZero())
 	})
 
 	t.Run("GetMessagesBySessionID", func(t *testing.T) {
@@ -55,10 +54,10 @@ func TestMessageStore(t *testing.T) {
 		messages, err := store.GetMessagesBySessionID(helper.ctx, session.ID, 2, time.Now().UTC().Add(time.Second))
 		require.NoError(t, err)
 		assert.Len(t, messages, 2)
-		assert.True(t, messages[0].CreatedAt.After(messages[1].CreatedAt))
+		assert.True(t, messages[0].Timestamp.After(messages[1].Timestamp))
 
 		// Get messages before the second message's timestamp
-		messages, err = store.GetMessagesBySessionID(helper.ctx, session.ID, 2, message2.CreatedAt)
+		messages, err = store.GetMessagesBySessionID(helper.ctx, session.ID, 2, message2.Timestamp)
 		require.NoError(t, err)
 		assert.Len(t, messages, 1)
 		assert.Equal(t, message1.ID, messages[0].ID)
@@ -106,7 +105,7 @@ func TestMessageStore(t *testing.T) {
 
 			// Verify messages are ordered by creation time (descending)
 			for i := 1; i < len(messages); i++ {
-				assert.True(t, messages[i-1].CreatedAt.After(messages[i].CreatedAt))
+				assert.True(t, messages[i-1].Timestamp.After(messages[i].Timestamp))
 			}
 		}
 	})

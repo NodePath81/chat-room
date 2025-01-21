@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"log"
 	"net/http"
 	"sync"
@@ -23,16 +24,18 @@ var upgrader = websocket.Upgrader{
 }
 
 type Client struct {
-	UserID   uuid.UUID
-	Username string
-	Conn     *websocket.Conn
-	mu       sync.Mutex
+	UserID    uuid.UUID
+	Username  string
+	Nickname  string
+	AvatarURL string
+	Conn      *websocket.Conn
+	mu        sync.Mutex
 }
 
 type WebSocketMessage struct {
-	Content string             `json:"content"`
-	Type    models.MessageType `json:"type"`
-	MsgType models.MessageType `json:"msgType"`
+	Content   string             `json:"content"`
+	Type      models.MessageType `json:"type"`
+	SessionID uuid.UUID          `json:"sessionId"`
 }
 
 type SessionClients struct {
@@ -112,9 +115,11 @@ func (h *WebSocketHandler) HandleWebSocket(w http.ResponseWriter, r *http.Reques
 
 	// Create new client
 	client := &Client{
-		UserID:   user.ID,
-		Username: user.Username,
-		Conn:     conn,
+		UserID:    user.ID,
+		Username:  user.Username,
+		Nickname:  user.Nickname,
+		AvatarURL: user.AvatarURL,
+		Conn:      conn,
 	}
 
 	// Add client to session
@@ -125,18 +130,7 @@ func (h *WebSocketHandler) HandleWebSocket(w http.ResponseWriter, r *http.Reques
 	sessionClients.Clients[claims.UserID] = append(sessionClients.Clients[claims.UserID], client)
 	sessionClients.mu.Unlock()
 
-	// Send message history
-	messages, err := h.store.GetMessagesBySessionID(r.Context(), sessionID, 50, time.Now().UTC())
-	if err == nil {
-		historyResponse := struct {
-			Type     string            `json:"type"`
-			Messages []*models.Message `json:"messages"`
-		}{
-			Type:     "history",
-			Messages: messages,
-		}
-		conn.WriteJSON(historyResponse)
-	}
+	// Remove historical message sending as it should be handled by the API
 
 	// Handle messages
 	go func() {
@@ -149,27 +143,30 @@ func (h *WebSocketHandler) HandleWebSocket(w http.ResponseWriter, r *http.Reques
 				return
 			}
 
+			// Validate message type - only allow text messages
+			if wsMsg.Type != models.MessageTypeText {
+				log.Printf("Rejected non-text message from user %s: type=%v", user.Username, wsMsg.Type)
+				conn.WriteJSON(map[string]string{"error": "only text messages are allowed via WebSocket"})
+				continue
+			}
+
 			log.Printf("Received message from user %s in session %s: %+v", user.Username, sessionID, wsMsg)
 
 			message := &models.Message{
 				ID:        uuid.New(),
 				UserID:    claims.UserID,
 				Content:   wsMsg.Content,
-				CreatedAt: time.Now().UTC(),
-				UpdatedAt: time.Now().UTC(),
+				Timestamp: time.Now().UTC(),
 				SessionID: sessionID,
-				Type:      wsMsg.Type,
-			}
-
-			// Set default type if not specified
-			if message.Type == "" {
-				message.Type = models.MessageTypeText
+				Type:      models.MessageTypeText, // Always set to text type
 			}
 
 			log.Printf("Processing message: %+v", message)
 
+			// Use background context for message handling
+			ctx := context.Background()
 			// Save message to database
-			if err := h.store.CreateMessage(r.Context(), message); err != nil {
+			if err := h.store.CreateMessage(ctx, message); err != nil {
 				log.Printf("Error saving message: %v", err)
 				continue
 			}

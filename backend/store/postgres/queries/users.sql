@@ -1,14 +1,14 @@
 -- name: CreateUser :exec
-INSERT INTO users (id, username, password, nickname, avatar_url, created_at, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7);
+INSERT INTO users (id, username, password, nickname, avatar_url, created_at)
+VALUES ($1, $2, $3, $4, $5, $6);
 
 -- name: GetUserByID :one
-SELECT id, username, password, nickname, avatar_url, created_at, updated_at
+SELECT id, username, password, nickname, avatar_url, created_at
 FROM users
 WHERE id = $1;
 
 -- name: GetUserByUsername :one
-SELECT id, username, password, nickname, avatar_url, created_at, updated_at
+SELECT id, username, password, nickname, avatar_url, created_at
 FROM users
 WHERE username = $1;
 
@@ -16,8 +16,7 @@ WHERE username = $1;
 UPDATE users
 SET username = $2,
     nickname = $3,
-    avatar_url = $4,
-    updated_at = $5
+    avatar_url = $4
 WHERE id = $1;
 
 -- name: DeleteUser :exec

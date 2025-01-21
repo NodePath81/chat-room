@@ -47,12 +47,6 @@ type Claims struct {
 	jwt.RegisteredClaims
 }
 
-// Add new response type for availability checks
-type AvailabilityResponse struct {
-	Available bool   `json:"available"`
-	Message   string `json:"message,omitempty"`
-}
-
 func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
@@ -176,7 +170,6 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Create response
 	response := LoginResponse{
 		Token: token,
 		User: struct {
@@ -209,15 +202,12 @@ func (h *AuthHandler) CheckUsernameAvailability(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	response := AvailabilityResponse{
-		Available: !exists,
-		Message:   "",
-	}
 	if exists {
-		response.Message = "Username is already taken"
+		w.WriteHeader(http.StatusConflict)
+		return
 	}
 
-	json.NewEncoder(w).Encode(response)
+	w.WriteHeader(http.StatusOK)
 }
 
 func (h *AuthHandler) CheckNicknameAvailability(w http.ResponseWriter, r *http.Request) {
@@ -235,13 +225,10 @@ func (h *AuthHandler) CheckNicknameAvailability(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	response := AvailabilityResponse{
-		Available: !exists,
-		Message:   "",
-	}
 	if exists {
-		response.Message = "Nickname is already taken"
+		w.WriteHeader(http.StatusConflict)
+		return
 	}
 
-	json.NewEncoder(w).Encode(response)
+	w.WriteHeader(http.StatusOK)
 }
