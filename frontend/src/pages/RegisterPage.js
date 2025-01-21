@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import RandomNicknameGenerator from './RandomNicknameGenerator';
+import RandomNicknameGenerator from '../components/register/RandomNicknameGenerator';
 import { API_ENDPOINTS } from '../services/api';
 
 const RegisterPage = () => {

@@ -1,11 +1,13 @@
 import React, { useState } from 'react';
 import { useNavigate, Link, useLocation } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 import { authService } from '../services/auth';
 import { API_ENDPOINTS } from '../services/api';
 
 const LoginPage = () => {
     const navigate = useNavigate();
     const location = useLocation();
+    const { login } = useAuth();
     const [formData, setFormData] = useState({
         username: '',
         password: ''
@@ -28,10 +30,11 @@ const LoginPage = () => {
             const data = await response.json();
             
             if (response.ok && data.token && data.user) {
+                login(data.token, data.user);
                 authService.setToken(data.token);
                 authService.setUser(data.user);
                 const returnTo = location.state?.returnTo || '/';
-                navigate(returnTo);
+                navigate(returnTo, { replace: true });
             } else {
                 setError(data.message || 'Login failed');
             }

@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
+import SessionService from '../services/session';
 import { API_ENDPOINTS, api } from '../services/api';
 import { authService } from '../services/auth';
 

@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
+import RandomNicknameGenerator from '../components/register/RandomNicknameGenerator';
 import { authService } from '../services/auth';
 import { API_ENDPOINTS } from '../services/api';
 

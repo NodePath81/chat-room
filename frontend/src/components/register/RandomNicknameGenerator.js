@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { commonWords } from '../utils/words';
+import { commonWords } from '../../utils/words';
 
 const RandomNicknameGenerator = ({ onNicknameChange, className, showValidation, validationStatus, isLoading }) => {
     const [placeholder, setPlaceholder] = useState('');

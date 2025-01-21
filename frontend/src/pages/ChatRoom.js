@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import TopBar from './chat/TopBar';
-import ChatBoard from './chat/ChatBoard';
-import SendBar from './chat/SendBar';
+import TopBar from '../components/chat/TopBar';
+import ChatBoard from '../components/chat/ChatBoard';
+import SendBar from '../components/chat/SendBar';
 import SessionService from '../services/session';
 import { chatService } from '../services/chat';
 
@@ -164,7 +164,7 @@ function ChatRoom() {
     if (isLoading) {
         return (
             <div className="flex items-center justify-center h-screen bg-gray-50">
-                <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
             </div>
         );
     }
@@ -177,17 +177,21 @@ function ChatRoom() {
                 onSettingsClick={handleSettingsClick}
             />
             
-            <ChatBoard
-                messages={messages}
-                users={users}
-                isLoading={isLoading}
-                isLoadingMore={isLoadingMore}
-                hasMore={hasMore}
-                showUpdateZone={showUpdateZone}
-                updateZoneExpanded={updateZoneExpanded}
-                onScroll={handleLoadMore}
-                onUpdateZoneChange={handleUpdateZoneChange}
-            />
+            <div className="flex-1 overflow-hidden">
+                <div className="max-w-7xl mx-auto h-full">
+                    <ChatBoard
+                        messages={messages}
+                        users={users}
+                        isLoading={isLoading}
+                        isLoadingMore={isLoadingMore}
+                        hasMore={hasMore}
+                        showUpdateZone={showUpdateZone}
+                        updateZoneExpanded={updateZoneExpanded}
+                        onScroll={handleLoadMore}
+                        onUpdateZoneChange={handleUpdateZoneChange}
+                    />
+                </div>
+            </div>
             
             <SendBar
                 onSendMessage={handleSendMessage}

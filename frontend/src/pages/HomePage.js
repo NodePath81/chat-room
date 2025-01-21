@@ -58,7 +58,7 @@ function HomePage() {
     };
 
     const handleJoinSession = async (sessionId) => {
-        navigate(`/chat/${sessionId}`);
+        navigate(`/sessions/${sessionId}`);
     };
 
     const getUserSessionRole = (sessionId) => {

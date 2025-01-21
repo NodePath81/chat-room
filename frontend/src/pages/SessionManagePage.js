@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
+import SessionService from '../services/session';
 import { API_ENDPOINTS, api } from '../services/api';
 import { authService } from '../services/auth';
 
 const SessionManagePage = () => {
-    const { id: sessionId } = useParams();
+    const { sessionId } = useParams();
     const navigate = useNavigate();
     const [session, setSession] = useState(null);
     const [members, setMembers] = useState([]);
@@ -16,8 +18,12 @@ const SessionManagePage = () => {
     const [error, setError] = useState('');
 
     useEffect(() => {
+        if (!sessionId) {
+            navigate('/');
+            return;
+        }
         fetchSessionData();
-    }, [sessionId]);
+    }, [sessionId, navigate]);
 
     const fetchSessionData = async () => {
         try {
@@ -26,6 +32,9 @@ const SessionManagePage = () => {
 
             // Check role first
             const roleData = await api.sessions.checkRole(sessionId);
+            if (!roleData || !roleData.role) {
+                throw new Error('Unable to verify session role');
+            }
             setRole(roleData.role);
 
             // If not creator, redirect to home
@@ -36,14 +45,27 @@ const SessionManagePage = () => {
 
             // Fetch session details
             const sessionData = await api.sessions.get(sessionId);
+            if (!sessionData) {
+                throw new Error('Session not found');
+            }
             setSession(sessionData);
 
             // Fetch members
             const membersData = await api.sessions.listMembers(sessionId);
-            setMembers(membersData.members);
+            if (membersData && membersData.members) {
+                setMembers(membersData.members);
+                // Fetch details for each member
+                membersData.members.forEach(memberId => {
+                    fetchMemberDetails(memberId);
+                });
+            }
 
         } catch (err) {
-            setError(err.message);
+            console.error('Error fetching session data:', err);
+            setError(err.message || 'Failed to load session data');
+            if (err.message.includes('not found') || err.message.includes('verify')) {
+                setTimeout(() => navigate('/'), 2000);
+            }
         } finally {
             setLoading(false);
         }
@@ -53,10 +75,14 @@ const SessionManagePage = () => {
         try {
             setError('');
             const data = await api.sessions.createShareLink(sessionId, { durationDays: duration });
+            if (!data || !data.token) {
+                throw new Error('Failed to generate share link');
+            }
             const fullShareLink = `${window.location.origin}/share?token=${data.token}`;
             setShareLink(fullShareLink);
         } catch (err) {
-            setError(err.message);
+            console.error('Error creating share link:', err);
+            setError(err.message || 'Failed to create share link');
         }
     };
 
@@ -65,9 +91,13 @@ const SessionManagePage = () => {
             setError('');
             await api.sessions.kickMember(sessionId, memberId);
             // Refresh members list
-            fetchSessionData();
+            const membersData = await api.sessions.listMembers(sessionId);
+            if (membersData && membersData.members) {
+                setMembers(membersData.members);
+            }
         } catch (err) {
-            setError(err.message);
+            console.error('Error kicking member:', err);
+            setError(err.message || 'Failed to kick member');
         }
     };
 
@@ -81,63 +111,84 @@ const SessionManagePage = () => {
             await api.sessions.remove(sessionId);
             navigate('/');
         } catch (err) {
-            setError(err.message);
+            console.error('Error removing session:', err);
+            setError(err.message || 'Failed to remove session');
         }
     };
 
     const fetchMemberDetails = async (memberId) => {
         try {
             const userData = await api.users.get(memberId);
-            setMemberDetails(prev => ({
-                ...prev,
-                [memberId]: userData
-            }));
+            if (userData) {
+                setMemberDetails(prev => ({
+                    ...prev,
+                    [memberId]: userData
+                }));
+            }
         } catch (error) {
             console.error('Error fetching member details:', error);
         }
     };
 
-    useEffect(() => {
-        members.forEach(memberId => {
-            if (!memberDetails[memberId]) {
-                fetchMemberDetails(memberId);
-            }
-        });
-    }, [members]);
-
     if (loading) {
-        return <div className="flex justify-center items-center min-h-screen">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
-        </div>;
+        return (
+            <div className="flex justify-center items-center min-h-screen bg-gray-50">
+                <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+            </div>
+        );
     }
 
-    if (role !== 'creator') {
-        return null; // Will redirect in useEffect
+    if (error) {
+        return (
+            <div className="flex justify-center items-center min-h-screen bg-gray-50">
+                <div className="bg-white shadow-lg rounded-lg p-6 max-w-md w-full mx-4">
+                    <div className="text-red-600 text-center mb-4">{error}</div>
+                    <button
+                        onClick={() => navigate('/')}
+                        className="w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                    >
+                        Return to Home
+                    </button>
+                </div>
+            </div>
+        );
+    }
+
+    if (role !== 'creator' || !session) {
+        return null;
     }
 
     return (
-        <div className="container mx-auto px-4 py-8">
-            <div className="max-w-4xl mx-auto space-y-8">
+        <div className="min-h-screen bg-gray-50 py-8">
+            <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 space-y-8">
                 {/* Session Info */}
-                <div className="bg-white shadow rounded-lg p-6">
-                    <h1 className="text-2xl font-bold mb-4">Session Management</h1>
+                <div className="bg-white shadow-sm rounded-lg p-6">
+                    <div className="flex items-center justify-between mb-6">
+                        <h1 className="text-2xl font-bold text-gray-900">Session Management</h1>
+                        <button
+                            onClick={() => navigate(`/sessions/${sessionId}`)}
+                            className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                        >
+                            Back to Chat
+                        </button>
+                    </div>
                     {session && (
                         <div className="mb-4">
-                            <h2 className="text-xl font-semibold">{session.name}</h2>
+                            <h2 className="text-xl font-semibold text-gray-900">{session.name}</h2>
                         </div>
                     )}
                 </div>
 
                 {/* Share Link Generator */}
-                <div className="bg-white shadow rounded-lg p-6">
-                    <h2 className="text-xl font-semibold mb-4">Create Share Link</h2>
+                <div className="bg-white shadow-sm rounded-lg p-6">
+                    <h2 className="text-xl font-semibold text-gray-900 mb-4">Create Share Link</h2>
                     <div className="space-y-4">
                         <div className="flex items-center space-x-4">
                             <label className="text-gray-700">Duration (days):</label>
                             <select 
                                 value={duration} 
                                 onChange={(e) => setDuration(Number(e.target.value))}
-                                className="border rounded px-3 py-2"
+                                className="border rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                             >
                                 {[1, 3, 7, 14, 30].map(days => (
                                     <option key={days} value={days}>{days} days</option>
@@ -145,7 +196,7 @@ const SessionManagePage = () => {
                             </select>
                             <button
                                 onClick={handleCreateShareLink}
-                                className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                                className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
                             >
                                 Generate Link
                             </button>
@@ -158,14 +209,14 @@ const SessionManagePage = () => {
                                         type="text"
                                         value={shareLink}
                                         readOnly
-                                        className="flex-1 border rounded px-3 py-2 bg-gray-50"
+                                        className="flex-1 border rounded-md px-3 py-2 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                                     />
                                     <button
                                         onClick={() => {
                                             navigator.clipboard.writeText(shareLink);
                                             alert('Link copied to clipboard!');
                                         }}
-                                        className="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2"
+                                        className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
                                     >
                                         Copy
                                     </button>
@@ -176,19 +227,19 @@ const SessionManagePage = () => {
                 </div>
 
                 {/* Members List */}
-                <div className="bg-white shadow rounded-lg p-6">
-                    <h2 className="text-xl font-semibold mb-4">Members</h2>
+                <div className="bg-white shadow-sm rounded-lg p-6">
+                    <h2 className="text-xl font-semibold text-gray-900 mb-4">Members</h2>
                     <div className="space-y-4">
                         {members.map(memberId => {
                             const member = memberDetails[memberId] || {};
                             return (
-                                <div key={memberId} className="flex items-center justify-between border-b py-3">
+                                <div key={memberId} className="flex items-center justify-between py-3 border-b border-gray-200 last:border-0">
                                     <div className="flex items-center space-x-3">
                                         {member.avatar_url ? (
                                             <img 
                                                 src={member.avatar_url} 
                                                 alt={member.nickname} 
-                                                className="w-10 h-10 rounded-full object-cover"
+                                                className="w-10 h-10 rounded-full object-cover bg-gray-100"
                                             />
                                         ) : (
                                             <div className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center">
@@ -197,14 +248,21 @@ const SessionManagePage = () => {
                                                 </svg>
                                             </div>
                                         )}
-                                        <span className="font-medium text-gray-900">
-                                            {member.nickname || 'Loading...'}
-                                        </span>
+                                        <div>
+                                            <span className="font-medium text-gray-900">
+                                                {member.nickname || 'Loading...'}
+                                            </span>
+                                            {memberId === session?.creator_id && (
+                                                <span className="ml-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                                    Creator
+                                                </span>
+                                            )}
+                                        </div>
                                     </div>
                                     {memberId !== session?.creator_id && (
                                         <button
                                             onClick={() => handleKickMember(memberId)}
-                                            className="text-red-500 hover:text-red-700 focus:outline-none"
+                                            className="inline-flex items-center px-3 py-1.5 border border-transparent text-sm leading-4 font-medium rounded-md text-red-700 bg-red-100 hover:bg-red-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
                                         >
                                             Kick
                                         </button>
@@ -216,22 +274,15 @@ const SessionManagePage = () => {
                 </div>
 
                 {/* Danger Zone */}
-                <div className="bg-red-50 shadow rounded-lg p-6">
-                    <h2 className="text-xl font-semibold mb-4 text-red-700">Danger Zone</h2>
+                <div className="bg-red-50 shadow-sm rounded-lg p-6">
+                    <h2 className="text-xl font-semibold text-red-700 mb-4">Danger Zone</h2>
                     <button
                         onClick={handleRemoveSession}
-                        className="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2"
+                        className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
                     >
                         Remove Session
                     </button>
                 </div>
-
-                {/* Error Display */}
-                {error && (
-                    <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
-                        {error}
-                    </div>
-                )}
             </div>
         </div>
     );
