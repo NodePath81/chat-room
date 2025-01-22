@@ -7,19 +7,24 @@ import (
 	"time"
 
 	"chat-room/auth"
+	"chat-room/middleware"
 	"chat-room/models"
 	"chat-room/store"
+	"chat-room/token"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 )
 
 type SessionHandler struct {
-	store store.Store
+	store        store.Store
+	tokenManager *token.TokenManager
 }
 
-func NewSessionHandler(store store.Store) *SessionHandler {
-	return &SessionHandler{store: store}
+func NewSessionHandler(store store.Store, tokenManager *token.TokenManager) *SessionHandler {
+	return &SessionHandler{
+		store:        store,
+		tokenManager: tokenManager,
+	}
 }
 
 type CreateSessionRequest struct {
@@ -96,12 +101,7 @@ func (h *SessionHandler) GetSessions(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *SessionHandler) GetSession(w http.ResponseWriter, r *http.Request) {
-	sessionID, err := uuid.Parse(chi.URLParam(r, "id"))
-	if err != nil {
-		http.Error(w, "Invalid session ID", http.StatusBadRequest)
-		return
-	}
-
+	sessionID := middleware.GetSessionID(r)
 	session, err := h.store.GetSessionByID(r.Context(), sessionID)
 	if err != nil {
 		http.Error(w, "Session not found", http.StatusNotFound)
@@ -130,13 +130,7 @@ type RoleResponse struct {
 
 func (h *SessionHandler) CheckRole(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-
-	sessionID, err := uuid.Parse(chi.URLParam(r, "id"))
-	if err != nil {
-		http.Error(w, "Invalid session ID", http.StatusBadRequest)
-		return
-	}
-
+	sessionID := middleware.GetSessionID(r)
 	userID := auth.GetUserIDFromContext(r)
 
 	// Get session to check if user is creator
@@ -209,14 +203,7 @@ type ShareLinkResponse struct {
 
 func (h *SessionHandler) CreateShareLink(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-
-	sessionID, err := uuid.Parse(chi.URLParam(r, "id"))
-	if err != nil {
-		http.Error(w, "Invalid session ID", http.StatusBadRequest)
-		return
-	}
-
-	userID := auth.GetUserIDFromContext(r)
+	sessionID := middleware.GetSessionID(r)
 
 	// Parse request body
 	var req CreateShareLinkRequest
@@ -228,18 +215,6 @@ func (h *SessionHandler) CreateShareLink(w http.ResponseWriter, r *http.Request)
 	// Validate duration
 	if req.DurationDays <= 0 || req.DurationDays > 30 {
 		http.Error(w, "Duration must be between 1 and 30 days", http.StatusBadRequest)
-		return
-	}
-
-	// Check if user is the creator of the session
-	session, err := h.store.GetSessionByID(r.Context(), sessionID)
-	if err != nil {
-		http.Error(w, "Session not found", http.StatusNotFound)
-		return
-	}
-
-	if session.CreatorID != userID {
-		http.Error(w, "Only the session creator can generate share links", http.StatusForbidden)
 		return
 	}
 
@@ -260,8 +235,8 @@ type MembersResponse struct {
 func (h *SessionHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	sessionID, err := uuid.Parse(chi.URLParam(r, "id"))
-	if err != nil {
+	sessionID := middleware.GetSessionID(r)
+	if sessionID == uuid.Nil {
 		http.Error(w, "Invalid session ID", http.StatusBadRequest)
 		return
 	}
@@ -282,12 +257,7 @@ func (h *SessionHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
 
 func (h *SessionHandler) KickMember(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-
-	sessionID, err := uuid.Parse(chi.URLParam(r, "id"))
-	if err != nil {
-		http.Error(w, "Invalid session ID", http.StatusBadRequest)
-		return
-	}
+	sessionID := middleware.GetSessionID(r)
 
 	memberID, err := uuid.Parse(r.URL.Query().Get("memberId"))
 	if err != nil {
@@ -295,21 +265,13 @@ func (h *SessionHandler) KickMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userID := auth.GetUserIDFromContext(r)
-
-	// Check if session exists and user is creator
+	// Cannot kick the creator
 	session, err := h.store.GetSessionByID(r.Context(), sessionID)
 	if err != nil {
 		http.Error(w, "Session not found", http.StatusNotFound)
 		return
 	}
 
-	if session.CreatorID != userID {
-		http.Error(w, "Only the creator can kick members", http.StatusForbidden)
-		return
-	}
-
-	// Cannot kick the creator
 	if memberID == session.CreatorID {
 		http.Error(w, "Cannot kick the creator", http.StatusBadRequest)
 		return
@@ -328,26 +290,7 @@ func (h *SessionHandler) KickMember(w http.ResponseWriter, r *http.Request) {
 
 func (h *SessionHandler) RemoveSession(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-
-	sessionID, err := uuid.Parse(chi.URLParam(r, "id"))
-	if err != nil {
-		http.Error(w, "Invalid session ID", http.StatusBadRequest)
-		return
-	}
-
-	userID := auth.GetUserIDFromContext(r)
-
-	// Check if session exists and user is creator
-	session, err := h.store.GetSessionByID(r.Context(), sessionID)
-	if err != nil {
-		http.Error(w, "Session not found", http.StatusNotFound)
-		return
-	}
-
-	if session.CreatorID != userID {
-		http.Error(w, "Only the creator can remove the session", http.StatusForbidden)
-		return
-	}
+	sessionID := middleware.GetSessionID(r)
 
 	// Start a transaction to remove the session and all its associations
 	tx, err := h.store.BeginTx(r.Context())
@@ -424,11 +367,7 @@ type GetMessagesResponse struct {
 func (h *SessionHandler) GetMessages(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	sessionID, err := uuid.Parse(chi.URLParam(r, "id"))
-	if err != nil {
-		http.Error(w, "Invalid session ID", http.StatusBadRequest)
-		return
-	}
+	sessionID := middleware.GetSessionID(r)
 
 	// Parse pagination parameters
 	limit := 50 // Default limit

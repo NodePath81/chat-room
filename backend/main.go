@@ -11,6 +11,7 @@ import (
 	custommw "chat-room/middleware"
 	"chat-room/s3"
 	"chat-room/store/postgres"
+	"chat-room/token"
 
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
@@ -51,10 +52,16 @@ func main() {
 		log.Fatal("Failed to initialize MinIO:", err)
 	}
 
+	// Initialize token manager
+	tokenManager, err := token.NewManager([]byte(cfg.JWTSecret))
+	if err != nil {
+		log.Fatal("Failed to initialize token manager:", err)
+	}
+
 	// Initialize handlers
 	wsHandler := handlers.NewWebSocketHandler(store)
 	authHandler := handlers.NewAuthHandler(store)
-	sessionHandler := handlers.NewSessionHandler(store)
+	sessionHandler := handlers.NewSessionHandler(store, tokenManager)
 	userHandler := handlers.NewUserHandler(store)
 	avatarHandler := handlers.NewAvatarHandler(store)
 	messageHandler := handlers.NewMessageHandler(store, wsHandler)
@@ -81,19 +88,34 @@ func main() {
 	// Session routes
 	r.Route("/api/sessions", func(r chi.Router) {
 		r.Use(custommw.AuthMiddleware)
+
+		// Public session routes (require only auth)
 		r.Get("/", sessionHandler.GetSessions)
 		r.Post("/", sessionHandler.CreateSession)
 		r.Get("/join", sessionHandler.JoinSession)
 		r.Get("/share/info", sessionHandler.GetShareInfo)
-		r.Route("/{id}", func(r chi.Router) {
-			r.Get("/", sessionHandler.GetSession)
+		r.Get("/token", sessionHandler.GetSessionToken)
+
+		// Protected session routes requiring session token
+		r.Group(func(r chi.Router) {
+			r.Use(custommw.NewSessionAuth(tokenManager))
+
+			// Basic session member routes
+			r.Get("/session", sessionHandler.GetSession)
 			r.Get("/role", sessionHandler.CheckRole)
 			r.Get("/members", sessionHandler.ListMembers)
-			r.Get("/kick", sessionHandler.KickMember)
-			r.Get("/remove", sessionHandler.RemoveSession)
-			r.Post("/share", sessionHandler.CreateShareLink)
 			r.Get("/messages", sessionHandler.GetMessages)
 			r.Post("/messages/upload", messageHandler.UploadMessageImage)
+			r.Get("/token/refresh", sessionHandler.RefreshSessionToken)
+			r.Delete("/token", sessionHandler.RevokeSessionToken)
+
+			// Creator-only routes
+			r.Group(func(r chi.Router) {
+				r.Use(custommw.RequireRole("creator"))
+				r.Get("/kick", sessionHandler.KickMember)
+				r.Get("/remove", sessionHandler.RemoveSession)
+				r.Post("/share", sessionHandler.CreateShareLink)
+			})
 		})
 	})
 
