@@ -74,7 +74,7 @@ const SessionManagePage = () => {
     const handleCreateShareLink = async () => {
         try {
             setError('');
-            const data = await api.sessions.createShareLink(sessionId, { durationDays: duration });
+            const data = await api.sessions.createShareLink({ durationDays: duration });
             if (!data || !data.token) {
                 throw new Error('Failed to generate share link');
             }
@@ -89,9 +89,9 @@ const SessionManagePage = () => {
     const handleKickMember = async (memberId) => {
         try {
             setError('');
-            await api.sessions.kickMember(sessionId, memberId);
+            await api.sessions.kickMember(memberId);
             // Refresh members list
-            const membersData = await api.sessions.listMembers(sessionId);
+            const membersData = await api.sessions.listMembers();
             if (membersData && membersData.members) {
                 setMembers(membersData.members);
             }
@@ -108,7 +108,7 @@ const SessionManagePage = () => {
 
         try {
             setError('');
-            await api.sessions.remove(sessionId);
+            await api.sessions.remove();
             navigate('/');
         } catch (err) {
             console.error('Error removing session:', err);

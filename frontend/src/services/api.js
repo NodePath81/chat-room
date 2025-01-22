@@ -83,43 +83,23 @@ export const API_ENDPOINTS = {
         LIST: `${API_BASE_URL}/api/sessions`,
         CREATE: `${API_BASE_URL}/api/sessions`,
         JOIN: (token) => `${API_BASE_URL}/api/sessions/join?token=${token}`,
-        GET: (id) => {
-            validateSessionId(id);
-            return `${API_BASE_URL}/api/sessions/${id}`;
-        },
-        CHECK_ROLE: (id) => {
-            validateSessionId(id);
-            return `${API_BASE_URL}/api/sessions/${id}/role`;
-        },
-        LIST_MEMBERS: (id) => {
-            validateSessionId(id);
-            return `${API_BASE_URL}/api/sessions/${id}/members`;
-        },
-        KICK_MEMBER: (sessionId, memberId) => {
-            validateSessionId(sessionId);
-            if (!isValidUUID(memberId)) throw new Error('Invalid member ID');
-            return `${API_BASE_URL}/api/sessions/${sessionId}/kick?memberId=${memberId}`;
-        },
-        REMOVE: (id) => {
-            validateSessionId(id);
-            return `${API_BASE_URL}/api/sessions/${id}/remove`;
-        },
-        CREATE_SHARE_LINK: (id) => {
-            validateSessionId(id);
-            return `${API_BASE_URL}/api/sessions/${id}/share`;
-        },
-        GET_SHARE_INFO: `${API_BASE_URL}/api/sessions/share/info`,
-        GET_MESSAGES: (id, params) => {
-            validateSessionId(id);
-            const url = new URL(`${API_BASE_URL}/api/sessions/${id}/messages`);
+        GET: `${API_BASE_URL}/api/sessions/session`,
+        CHECK_ROLE: `${API_BASE_URL}/api/sessions/role`,
+        LIST_MEMBERS: `${API_BASE_URL}/api/sessions/members`,
+        KICK_MEMBER: (memberId) => `${API_BASE_URL}/api/sessions/kick?memberId=${memberId}`,
+        REMOVE: `${API_BASE_URL}/api/sessions/remove`,
+        CREATE_SHARE_LINK: `${API_BASE_URL}/api/sessions/share`,
+        GET_SHARE_INFO: (token) => `${API_BASE_URL}/api/sessions/share/info?token=${token}`,
+        GET_MESSAGES: (params) => {
+            const url = new URL(`${API_BASE_URL}/api/sessions/messages`);
             if (params?.before) url.searchParams.set('before', params.before);
             if (params?.limit) url.searchParams.set('limit', params.limit);
             return url.toString();
         },
-        UPLOAD_MESSAGE_IMAGE: (id) => {
-            validateSessionId(id);
-            return `${API_BASE_URL}/api/sessions/${id}/messages/upload`;
-        },
+        UPLOAD_MESSAGE_IMAGE: `${API_BASE_URL}/api/sessions/messages/upload`,
+        GET_TOKEN: `${API_BASE_URL}/api/sessions/token`,
+        REFRESH_TOKEN: `${API_BASE_URL}/api/sessions/token/refresh`,
+        REVOKE_TOKEN: `${API_BASE_URL}/api/sessions/token`,
     },
     AVATAR: {
         UPLOAD: `${API_BASE_URL}/api/avatar`,
@@ -165,21 +145,26 @@ export const api = {
             body: JSON.stringify(data),
         }),
         join: (token) => makeRequest(API_ENDPOINTS.SESSIONS.JOIN(token)),
-        get: (id) => makeRequest(API_ENDPOINTS.SESSIONS.GET(id)),
-        checkRole: (id) => makeRequest(API_ENDPOINTS.SESSIONS.CHECK_ROLE(id)),
-        listMembers: (id) => makeRequest(API_ENDPOINTS.SESSIONS.LIST_MEMBERS(id)),
-        kickMember: (sessionId, userId) => makeRequest(API_ENDPOINTS.SESSIONS.KICK_MEMBER(sessionId, userId)),
-        remove: (id) => makeRequest(API_ENDPOINTS.SESSIONS.REMOVE(id)),
-        createShareLink: (id, data) => makeRequest(API_ENDPOINTS.SESSIONS.CREATE_SHARE_LINK(id), {
+        get: () => makeRequest(API_ENDPOINTS.SESSIONS.GET),
+        checkRole: () => makeRequest(API_ENDPOINTS.SESSIONS.CHECK_ROLE),
+        listMembers: () => makeRequest(API_ENDPOINTS.SESSIONS.LIST_MEMBERS),
+        kickMember: (memberId) => makeRequest(API_ENDPOINTS.SESSIONS.KICK_MEMBER(memberId)),
+        remove: () => makeRequest(API_ENDPOINTS.SESSIONS.REMOVE),
+        createShareLink: (data) => makeRequest(API_ENDPOINTS.SESSIONS.CREATE_SHARE_LINK, {
             method: 'POST',
             body: JSON.stringify(data),
         }),
-        getShareInfo: () => makeRequest(API_ENDPOINTS.SESSIONS.GET_SHARE_INFO),
-        getMessages: (id, params) => makeRequest(API_ENDPOINTS.SESSIONS.GET_MESSAGES(id, params)),
-        uploadMessageImage: (id, formData) => makeRequest(API_ENDPOINTS.SESSIONS.UPLOAD_MESSAGE_IMAGE(id), {
+        getShareInfo: (token) => makeRequest(API_ENDPOINTS.SESSIONS.GET_SHARE_INFO(token)),
+        getMessages: (params) => makeRequest(API_ENDPOINTS.SESSIONS.GET_MESSAGES(params)),
+        uploadMessageImage: (formData) => makeRequest(API_ENDPOINTS.SESSIONS.UPLOAD_MESSAGE_IMAGE, {
             method: 'POST',
             headers: {}, // Let browser set content-type for multipart/form-data
             body: formData,
+        }),
+        getToken: () => makeRequest(API_ENDPOINTS.SESSIONS.GET_TOKEN),
+        refreshToken: () => makeRequest(API_ENDPOINTS.SESSIONS.REFRESH_TOKEN),
+        revokeToken: () => makeRequest(API_ENDPOINTS.SESSIONS.REVOKE_TOKEN, {
+            method: 'DELETE'
         }),
     },
     avatar: {

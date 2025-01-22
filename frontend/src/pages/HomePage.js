@@ -25,7 +25,9 @@ function HomePage() {
     const fetchUserSessions = async () => {
         try {
             const data = await api.users.getSessions();
-            setUserSessions(data);
+            if (Array.isArray(data)) {
+                setUserSessions(data);
+            }
         } catch (error) {
             console.error('Error fetching user sessions:', error);
         }
@@ -34,7 +36,9 @@ function HomePage() {
     const fetchSessions = async () => {
         try {
             const data = await api.sessions.list();
-            setSessions(data);
+            if (Array.isArray(data)) {
+                setSessions(data);
+            }
         } catch (error) {
             console.error('Error fetching sessions:', error);
         }
@@ -50,15 +54,34 @@ function HomePage() {
             await fetchUserSessions();
             
             if (newSession && newSession.id) {
-                await handleJoinSession(newSession.id);
+                // Get session token for the new session
+                const tokenResponse = await api.sessions.getToken();
+                if (tokenResponse && tokenResponse.token) {
+                    navigate(`/chat/${newSession.id}`);
+                }
             }
         } catch (error) {
             console.error('Error creating session:', error);
         }
     };
 
-    const handleJoinSession = async (sessionId) => {
-        navigate(`/sessions/${sessionId}`);
+    const handleJoinSession = async (token) => {
+        try {
+            await api.sessions.join(token);
+            await fetchUserSessions();
+            
+            // Get session info from the token
+            const shareInfo = await api.sessions.getShareInfo(token);
+            if (shareInfo && shareInfo.session_id) {
+                // Get session token
+                const tokenResponse = await api.sessions.getToken();
+                if (tokenResponse && tokenResponse.token) {
+                    navigate(`/chat/${shareInfo.session_id}`);
+                }
+            }
+        } catch (error) {
+            console.error('Error joining session:', error);
+        }
     };
 
     const getUserSessionRole = (sessionId) => {
@@ -112,7 +135,7 @@ function HomePage() {
                                 {session.users?.length || 0} members
                             </p>
                             <button
-                                onClick={() => handleJoinSession(session.id)}
+                                onClick={() => handleJoinSession(session.token)}
                                 className="w-full px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
                             >
                                 Enter Chat

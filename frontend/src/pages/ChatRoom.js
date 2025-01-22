@@ -5,6 +5,7 @@ import ChatBoard from '../components/chat/ChatBoard';
 import SendBar from '../components/chat/SendBar';
 import SessionService from '../services/session';
 import { chatService } from '../services/chat';
+import api from '../services/api';
 
 function ChatRoom() {
     const navigate = useNavigate();
@@ -24,21 +25,34 @@ function ChatRoom() {
     const initializeChat = useCallback(async () => {
         setIsLoading(true);
         try {
+            // Get session token
+            const tokenResponse = await api.sessions.getToken();
+            if (!tokenResponse || !tokenResponse.token) {
+                console.error('Failed to get session token');
+                navigate('/');
+                return;
+            }
+
             // Check user role and session details
-            const role = await SessionService.checkSessionRole(currentSessionId);
-            if (role === null) {
+            const roleResponse = await api.sessions.checkRole();
+            if (!roleResponse || !roleResponse.role) {
+                console.error('Failed to get user role');
                 navigate('/');
                 return;
             }
             
-            setIsCreator(role === 'creator');
+            setIsCreator(roleResponse.role === 'creator');
             
             // Get session details
-            const sessionDetails = await SessionService.getSession(currentSessionId);
+            const sessionDetails = await api.sessions.get();
+            if (!sessionDetails) {
+                console.error('Failed to get session details');
+                navigate('/');
+                return;
+            }
+
             setSessionName(sessionDetails.name);
             console.log('Session details loaded:', sessionDetails);
-            
-            
             
             // Connect WebSocket
             try {
@@ -46,8 +60,8 @@ function ChatRoom() {
                 console.log('WebSocket connection initiated');
 
                 // Load initial messages
-                const timestamp = new Date().getTime();
-                await loadMessages(timestamp);
+                const timestamp = new Date().toISOString();
+                await loadMessages({ before: timestamp });
                 console.log('Initial messages loaded');
                 
                 chatService.onMessageReceived((message) => {
@@ -61,12 +75,12 @@ function ChatRoom() {
                 console.error('Error setting up WebSocket:', error);
                 // Continue loading the chat even if WebSocket fails
             }
-            } catch (error) {
-                console.error('Error initializing chat:', error);
-                navigate('/');
-            } finally {
-                setIsLoading(false);
-            }
+        } catch (error) {
+            console.error('Error initializing chat:', error);
+            navigate('/');
+        } finally {
+            setIsLoading(false);
+        }
     }, [currentSessionId, navigate]);
 
     useEffect(() => {
@@ -76,24 +90,25 @@ function ChatRoom() {
         };
     }, [currentSessionId, initializeChat]);
 
-    async function loadMessages(beforeTimestamp = null) {
+    async function loadMessages(params = {}) {
         try {
-            const response = await chatService.getMessages(beforeTimestamp);
+            const response = await api.sessions.getMessages(params);
             const newMessages = response.messages || [];
             
             if (newMessages.length === 0) {
                 setHasMore(false);
-            return;
-        }
+                return;
+            }
 
             setMessages(prev => 
-                beforeTimestamp ? [...newMessages, ...prev] : newMessages
+                params.before ? [...newMessages, ...prev] : newMessages
             );
-            setHasMore(response.hasMore);
+            setHasMore(response.has_more);
 
             // Store the oldest message's timestamp
             if (newMessages.length > 0) {
-                oldestTimestampRef.current = response.oldestTimestamp;
+                const timestamps = newMessages.map(msg => new Date(msg.timestamp).getTime());
+                oldestTimestampRef.current = new Date(Math.min(...timestamps)).toISOString();
             }
 
             // Fetch usernames for all messages
@@ -127,7 +142,7 @@ function ChatRoom() {
         setUpdateZoneExpanded(true);
         
         try {
-            await loadMessages(oldestTimestampRef.current);
+            await loadMessages({ before: oldestTimestampRef.current });
         } finally {
             setIsLoadingMore(false);
             setUpdateZoneExpanded(false);
@@ -140,10 +155,14 @@ function ChatRoom() {
     };
 
     const handleSendMessage = async (messageData) => {
-        if (!messageData.trim()) return;
+        if (!messageData.content || !messageData.type) return;
         
         try {
-            await chatService.sendTextMessage(messageData);
+            if (messageData.type === 'image') {
+                await chatService.uploadImage(messageData.content);
+            } else {
+                await chatService.sendTextMessage(messageData.content);
+            }
         } catch (error) {
             console.error('Error sending message:', error);
         }
