@@ -3,9 +3,9 @@ import { useNavigate, useParams } from 'react-router-dom';
 import TopBar from '../components/chat/TopBar';
 import ChatBoard from '../components/chat/ChatBoard';
 import SendBar from '../components/chat/SendBar';
-import SessionService from '../services/session';
+import { api } from '../services/api';
 import { chatService } from '../services/chat';
-import api from '../services/api';
+import SessionService from '../services/session';
 
 function ChatRoom() {
     const navigate = useNavigate();
@@ -25,8 +25,8 @@ function ChatRoom() {
     const initializeChat = useCallback(async () => {
         setIsLoading(true);
         try {
-            // Get session token
-            const tokenResponse = await api.sessions.getToken();
+            // Get session token first
+            const tokenResponse = await api.sessions.getToken(currentSessionId);
             if (!tokenResponse || !tokenResponse.token) {
                 console.error('Failed to get session token');
                 navigate('/');
@@ -34,7 +34,7 @@ function ChatRoom() {
             }
 
             // Check user role and session details
-            const roleResponse = await api.sessions.checkRole();
+            const roleResponse = await api.sessions.checkRole(currentSessionId);
             if (!roleResponse || !roleResponse.role) {
                 console.error('Failed to get user role');
                 navigate('/');
@@ -44,7 +44,7 @@ function ChatRoom() {
             setIsCreator(roleResponse.role === 'creator');
             
             // Get session details
-            const sessionDetails = await api.sessions.get();
+            const sessionDetails = await api.sessions.get(currentSessionId);
             if (!sessionDetails) {
                 console.error('Failed to get session details');
                 navigate('/');
@@ -61,7 +61,7 @@ function ChatRoom() {
 
                 // Load initial messages
                 const timestamp = new Date().toISOString();
-                await loadMessages({ before: timestamp });
+                await loadMessages(timestamp);
                 console.log('Initial messages loaded');
                 
                 chatService.onMessageReceived((message) => {
@@ -90,9 +90,12 @@ function ChatRoom() {
         };
     }, [currentSessionId, initializeChat]);
 
-    async function loadMessages(params = {}) {
+    async function loadMessages(beforeTimestamp = null) {
         try {
-            const response = await api.sessions.getMessages(params);
+            const response = await api.sessions.getMessages(currentSessionId, {
+                before: beforeTimestamp,
+                limit: 50
+            });
             const newMessages = response.messages || [];
             
             if (newMessages.length === 0) {
@@ -101,7 +104,7 @@ function ChatRoom() {
             }
 
             setMessages(prev => 
-                params.before ? [...newMessages, ...prev] : newMessages
+                beforeTimestamp ? [...newMessages, ...prev] : newMessages
             );
             setHasMore(response.has_more);
 
@@ -142,7 +145,7 @@ function ChatRoom() {
         setUpdateZoneExpanded(true);
         
         try {
-            await loadMessages({ before: oldestTimestampRef.current });
+            await loadMessages(oldestTimestampRef.current);
         } finally {
             setIsLoadingMore(false);
             setUpdateZoneExpanded(false);
@@ -159,7 +162,9 @@ function ChatRoom() {
         
         try {
             if (messageData.type === 'image') {
-                await chatService.uploadImage(messageData.content);
+                const formData = new FormData();
+                formData.append('image', messageData.content);
+                await api.sessions.uploadMessageImage(currentSessionId, formData);
             } else {
                 await chatService.sendTextMessage(messageData.content);
             }

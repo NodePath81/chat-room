@@ -7,9 +7,9 @@ import (
 	"sync"
 	"time"
 
-	"chat-room/auth"
 	"chat-room/models"
 	"chat-room/store"
+	"chat-room/token"
 
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
@@ -44,26 +44,38 @@ type SessionClients struct {
 }
 
 type WebSocketHandler struct {
-	sessions sync.Map // map[uuid.UUID]*SessionClients
-	store    store.Store
+	sessions     sync.Map // map[uuid.UUID]*SessionClients
+	store        store.Store
+	tokenManager *token.TokenManager
 }
 
-func NewWebSocketHandler(store store.Store) *WebSocketHandler {
+func NewWebSocketHandler(store store.Store, tokenManager *token.TokenManager) *WebSocketHandler {
 	return &WebSocketHandler{
-		store: store,
+		store:        store,
+		tokenManager: tokenManager,
 	}
 }
 
 func (h *WebSocketHandler) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
-	sessionIDStr := r.URL.Query().Get("sessionId")
-	sessionID, err := uuid.Parse(sessionIDStr)
-	if err != nil {
-		http.Error(w, "Invalid session ID", http.StatusBadRequest)
+	// Get token from URL parameter
+	wsToken := r.URL.Query().Get("token")
+	if wsToken == "" {
+		http.Error(w, "WebSocket token is required", http.StatusUnauthorized)
 		return
 	}
 
+	// Verify token
+	claims, err := h.tokenManager.VerifyWebSocketToken(wsToken)
+	if err != nil {
+		http.Error(w, "Invalid or expired WebSocket token", http.StatusUnauthorized)
+		return
+	}
+
+	sessionID := claims.SessionID
+	userID := claims.UserID
+
 	// Verify session exists
-	session, err := h.store.GetSessionByID(r.Context(), sessionID)
+	_, err = h.store.GetSessionByID(r.Context(), sessionID)
 	if err != nil {
 		http.Error(w, "Session not found", http.StatusNotFound)
 		return
@@ -75,38 +87,8 @@ func (h *WebSocketHandler) HandleWebSocket(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	// Wait for authentication message
-	var authMsg struct {
-		Token string `json:"token"`
-	}
-	if err := conn.ReadJSON(&authMsg); err != nil {
-		conn.Close()
-		return
-	}
-
-	claims, err := auth.ParseToken(authMsg.Token)
-	if err != nil {
-		conn.WriteJSON(map[string]string{"error": "invalid token"})
-		conn.Close()
-		return
-	}
-
-	// Verify user is a member of the session
-	role, err := h.store.GetUserSessionRole(r.Context(), claims.UserID, session.ID)
-	if err != nil || role == "" {
-		conn.WriteJSON(map[string]string{"error": "not a member of this session"})
-		conn.Close()
-		return
-	}
-
-	// Get or create session clients
-	sessionClientsInterface, _ := h.sessions.LoadOrStore(sessionID, &SessionClients{
-		Clients: make(map[uuid.UUID][]*Client),
-	})
-	sessionClients := sessionClientsInterface.(*SessionClients)
-
 	// Get user info
-	user, err := h.store.GetUserByID(r.Context(), claims.UserID)
+	user, err := h.store.GetUserByID(r.Context(), userID)
 	if err != nil {
 		conn.WriteJSON(map[string]string{"error": "user not found"})
 		conn.Close()
@@ -122,19 +104,23 @@ func (h *WebSocketHandler) HandleWebSocket(w http.ResponseWriter, r *http.Reques
 		Conn:      conn,
 	}
 
+	// Get or create session clients
+	sessionClientsInterface, _ := h.sessions.LoadOrStore(sessionID, &SessionClients{
+		Clients: make(map[uuid.UUID][]*Client),
+	})
+	sessionClients := sessionClientsInterface.(*SessionClients)
+
 	// Add client to session
 	sessionClients.mu.Lock()
-	if _, exists := sessionClients.Clients[claims.UserID]; !exists {
-		sessionClients.Clients[claims.UserID] = make([]*Client, 0)
+	if _, exists := sessionClients.Clients[userID]; !exists {
+		sessionClients.Clients[userID] = make([]*Client, 0)
 	}
-	sessionClients.Clients[claims.UserID] = append(sessionClients.Clients[claims.UserID], client)
+	sessionClients.Clients[userID] = append(sessionClients.Clients[userID], client)
 	sessionClients.mu.Unlock()
-
-	// Remove historical message sending as it should be handled by the API
 
 	// Handle messages
 	go func() {
-		defer h.removeConnection(sessionID, claims.UserID, client)
+		defer h.removeConnection(sessionID, userID, client)
 
 		for {
 			var wsMsg WebSocketMessage
@@ -154,11 +140,11 @@ func (h *WebSocketHandler) HandleWebSocket(w http.ResponseWriter, r *http.Reques
 
 			message := &models.Message{
 				ID:        uuid.New(),
-				UserID:    claims.UserID,
+				UserID:    userID,
 				Content:   wsMsg.Content,
 				Timestamp: time.Now().UTC(),
 				SessionID: sessionID,
-				Type:      models.MessageTypeText, // Always set to text type
+				Type:      models.MessageTypeText,
 			}
 
 			log.Printf("Processing message: %+v", message)

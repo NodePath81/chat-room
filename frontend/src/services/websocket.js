@@ -2,120 +2,90 @@ import { API_ENDPOINTS } from './api';
 
 class WebSocketService {
   constructor() {
-    this.connections = new Map(); // sessionId -> { ws, messageHandlers }
+    this.ws = null;
+    this.messageCallback = null;
+    this.errorCallback = null;
+    this.connectCallback = null;
+    this.disconnectCallback = null;
     
-    // Bind methods to maintain 'this' context
+    // Bind methods to maintain context
     this.connect = this.connect.bind(this);
     this.disconnect = this.disconnect.bind(this);
-    this.disconnectAll = this.disconnectAll.bind(this);
     this.sendMessage = this.sendMessage.bind(this);
     this.onMessage = this.onMessage.bind(this);
-    this.removeHandlers = this.removeHandlers.bind(this);
+    this.onError = this.onError.bind(this);
+    this.onConnect = this.onConnect.bind(this);
+    this.onDisconnect = this.onDisconnect.bind(this);
   }
 
   connect(sessionId) {
-    if (this.connections.has(sessionId)) {
-      this.disconnect(sessionId);
+    if (this.ws) {
+      this.disconnect();
     }
 
-    try {
-      const ws = new WebSocket(`ws://localhost:8080/ws?sessionId=${sessionId}`);
-      const connection = {
-        ws,
-        messageHandlers: []
-      };
+    // Use the new WebSocket endpoint that's protected by middleware
+    this.ws = new WebSocket(`ws://localhost:8080/api/sessions/wschat?session_id=${sessionId}`);
 
-      this.connections.set(sessionId, connection);
-
-      ws.onopen = () => {
-        const token = localStorage.getItem('token');
-        ws.send(JSON.stringify({ token }));
-        console.log('WebSocket connected for session:', sessionId);
-      };
-
-      ws.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          console.log('Received WebSocket message:', data);
-          connection.messageHandlers.forEach(handler => handler(data));
-        } catch (error) {
-          console.error('Error handling WebSocket message:', error);
-        }
-      };
-
-      ws.onclose = () => {
-        console.log('WebSocket disconnected for session:', sessionId);
-        this.connections.delete(sessionId);
-      };
-
-      ws.onerror = (error) => {
-        console.error('WebSocket error:', error);
-        this.disconnect(sessionId);
-      };
-    } catch (error) {
-      console.error('Error establishing WebSocket connection:', error);
-      this.connections.delete(sessionId);
-    }
-  }
-
-  disconnect(sessionId) {
-    console.log('Disconnecting WebSocket for session:', sessionId);
-    const connection = this.connections.get(sessionId);
-    if (connection) {
-      if (connection.ws) {
-        connection.ws.close();
+    this.ws.onopen = () => {
+      console.log('WebSocket connected');
+      if (this.connectCallback) {
+        this.connectCallback();
       }
-      this.connections.delete(sessionId);
-    }
+    };
+
+    this.ws.onmessage = (event) => {
+      const message = JSON.parse(event.data);
+      if (this.messageCallback) {
+        this.messageCallback(message);
+      }
+    };
+
+    this.ws.onerror = (error) => {
+      console.error('WebSocket error:', error);
+      if (this.errorCallback) {
+        this.errorCallback(error);
+      }
+    };
+
+    this.ws.onclose = () => {
+      console.log('WebSocket disconnected');
+      if (this.disconnectCallback) {
+        this.disconnectCallback();
+      }
+    };
   }
 
-  disconnectAll() {
-    console.log('Disconnecting all WebSocket connections');
-    for (const [sessionId] of this.connections) {
-      this.disconnect(sessionId);
+  disconnect() {
+    if (this.ws) {
+      this.ws.close();
+      this.ws = null;
     }
   }
 
   sendMessage(message) {
-    const connection = this.connections.get(message.session_id);
-    if (connection && connection.ws && connection.ws.readyState === WebSocket.OPEN) {
-      console.log('Sending WebSocket message:', message);
-      connection.ws.send(JSON.stringify(message));
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify(message));
     } else {
-      console.error('Failed to send message: WebSocket not connected');
-      throw new Error('WebSocket not connected');
+      console.error('WebSocket is not connected');
     }
   }
 
-  onMessage(handler, sessionId) {
-    console.log('Registering message handler for session:', sessionId);
-    const connection = this.connections.get(sessionId);
-    if (connection) {
-      connection.messageHandlers.push(handler);
-    } else {
-      console.error('No connection found for session:', sessionId);
-      throw new Error('No WebSocket connection found');
-    }
+  onMessage(callback) {
+    this.messageCallback = callback;
   }
 
-  removeHandlers(sessionId) {
-    console.log('Removing message handlers for session:', sessionId);
-    const connection = this.connections.get(sessionId);
-    if (connection) {
-      connection.messageHandlers = [];
-    }
+  onError(callback) {
+    this.errorCallback = callback;
+  }
+
+  onConnect(callback) {
+    this.connectCallback = callback;
+  }
+
+  onDisconnect(callback) {
+    this.disconnectCallback = callback;
   }
 }
 
-// Create a singleton instance
-const webSocketService = new WebSocketService();
-
-// Export the instance methods directly
-export const {
-  connect,
-  disconnect,
-  disconnectAll,
-  sendMessage,
-  onMessage,
-  removeHandlers
-} = webSocketService; 
+// Export singleton instance
+export const websocketService = new WebSocketService(); 

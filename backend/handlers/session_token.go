@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"chat-room/auth"
+	"chat-room/middleware"
 	"chat-room/token"
 	"encoding/json"
 	"net/http"
@@ -12,6 +13,10 @@ import (
 )
 
 type SessionTokenResponse struct {
+	Token string `json:"token"`
+}
+
+type WebSocketTokenResponse struct {
 	Token string `json:"token"`
 }
 
@@ -136,4 +141,24 @@ func (h *SessionHandler) RevokeSessionToken(w http.ResponseWriter, r *http.Reque
 
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{"message": "Session token revoked"})
+}
+
+// GetWebSocketToken generates and returns a WebSocket token
+func (h *SessionHandler) GetWebSocketToken(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	// Get session ID from query parameter
+	sessionID := middleware.GetSessionID(r)
+
+	// Get user ID from context
+	userID := auth.GetUserIDFromContext(r)
+
+	// Generate WebSocket token with 5-minute expiration
+	token, err := h.tokenManager.GenerateWebSocketToken(userID, sessionID, 5*time.Minute)
+	if err != nil {
+		http.Error(w, "Failed to generate WebSocket token", http.StatusInternalServerError)
+		return
+	}
+
+	json.NewEncoder(w).Encode(WebSocketTokenResponse{Token: token})
 }

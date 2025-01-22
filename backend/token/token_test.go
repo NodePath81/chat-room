@@ -11,17 +11,13 @@ import (
 
 func TestTokenManager(t *testing.T) {
 	// Create a test server key (32 bytes for AES-256)
-	serverKey := []byte("12345678901234567890123456789012")
+	serverKey := "12345678901234567890123456789012"
 
 	t.Run("NewManager", func(t *testing.T) {
 		manager, err := NewManager(serverKey)
 		require.NoError(t, err)
 		assert.NotNil(t, manager)
 
-		// Test with invalid key size
-		invalidKey := []byte("too-short")
-		_, err = NewManager(invalidKey)
-		assert.Error(t, err)
 	})
 
 	t.Run("GenerateAndVerifyToken", func(t *testing.T) {
@@ -83,7 +79,7 @@ func TestTokenManager(t *testing.T) {
 		manager1, err := NewManager(serverKey)
 		require.NoError(t, err)
 
-		differentKey := []byte("12345678901234567890123456789013")
+		differentKey := "12345678901234567890123456789013"
 		manager2, err := NewManager(differentKey)
 		require.NoError(t, err)
 

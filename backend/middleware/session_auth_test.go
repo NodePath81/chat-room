@@ -14,7 +14,7 @@ import (
 
 func TestSessionAuth(t *testing.T) {
 	// Create token manager for testing
-	serverKey := []byte("12345678901234567890123456789012")
+	serverKey := "12345678901234567890123456789012"
 	tokenManager, err := token.NewManager(serverKey)
 	require.NoError(t, err)
 
@@ -86,7 +86,7 @@ func TestSessionAuth(t *testing.T) {
 
 func TestRequireRole(t *testing.T) {
 	// Create token manager for testing
-	serverKey := []byte("12345678901234567890123456789012")
+	serverKey := "12345678901234567890123456789012"
 	tokenManager, err := token.NewManager(serverKey)
 	require.NoError(t, err)
 

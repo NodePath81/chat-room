@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import SessionService from '../services/session';
-import { API_ENDPOINTS, api } from '../services/api';
+import { api, API_ENDPOINTS } from '../services/api';
 import { authService } from '../services/auth';
 
 const SessionManagePage = () => {
@@ -29,6 +28,12 @@ const SessionManagePage = () => {
         try {
             setLoading(true);
             setError('');
+
+            // Get session token first
+            const tokenResponse = await api.sessions.getToken(sessionId);
+            if (!tokenResponse || !tokenResponse.token) {
+                throw new Error('Failed to get session token');
+            }
 
             // Check role first
             const roleData = await api.sessions.checkRole(sessionId);
@@ -89,9 +94,9 @@ const SessionManagePage = () => {
     const handleKickMember = async (memberId) => {
         try {
             setError('');
-            await api.sessions.kickMember(memberId);
+            await api.sessions.kickMember(sessionId, memberId);
             // Refresh members list
-            const membersData = await api.sessions.listMembers();
+            const membersData = await api.sessions.listMembers(sessionId);
             if (membersData && membersData.members) {
                 setMembers(membersData.members);
             }
@@ -108,7 +113,7 @@ const SessionManagePage = () => {
 
         try {
             setError('');
-            await api.sessions.remove();
+            await api.sessions.remove(sessionId);
             navigate('/');
         } catch (err) {
             console.error('Error removing session:', err);

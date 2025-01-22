@@ -53,7 +53,7 @@ func main() {
 	}
 
 	// Initialize token manager
-	tokenManager, err := token.NewManager([]byte(cfg.JWTSecret))
+	tokenManager, err := token.NewManager(cfg.JWTSecret)
 	if err != nil {
 		log.Fatal("Failed to initialize token manager:", err)
 	}

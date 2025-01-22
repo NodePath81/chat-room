@@ -2,13 +2,13 @@
 const API_BASE_URL = 'http://localhost:8080'; // or whatever port your backend is running on
 
 // Utility function to validate UUID
-export const isValidUUID = (uuid) => {
+const isValidUUID = (uuid) => {
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
     return uuidRegex.test(uuid);
 };
 
 // Error class for API errors
-export class APIError extends Error {
+class APIError extends Error {
     constructor(message, status, data) {
         super(message);
         this.name = 'APIError';
@@ -43,6 +43,7 @@ const makeRequest = async (url, options = {}) => {
             ...(token && { Authorization: `Bearer ${token}` }),
             ...options.headers,
         },
+        credentials: 'include', // This enables sending and receiving cookies
     };
 
     const response = await fetch(url, { ...defaultOptions, ...options });
@@ -57,7 +58,8 @@ const validateSessionId = (id) => {
     return id;
 };
 
-export const API_ENDPOINTS = {
+// API endpoints configuration
+const API_ENDPOINTS = {
     AUTH: {
         LOGIN: `${API_BASE_URL}/api/auth/login`,
         REGISTER: `${API_BASE_URL}/api/auth/register`,
@@ -107,9 +109,31 @@ export const API_ENDPOINTS = {
     WEBSOCKET: {
         CONNECT: (sessionId) => {
             validateSessionId(sessionId);
-            return `ws://localhost:8080/ws?sessionId=${sessionId}`;
+            return `ws://localhost:8080/api/sessions/wschat?session_id=${sessionId}`;
         },
     },
+};
+
+// Session token management
+const getSessionToken = async (sessionId) => {
+    // First try to get token from cookie
+    // The cookie would be named session_token_{sessionId}
+    const cookies = document.cookie.split(';');
+    const tokenCookie = cookies.find(cookie => 
+        cookie.trim().startsWith(`session_token_${sessionId}=`)
+    );
+    
+    if (tokenCookie) {
+        // If we have a cookie with the token, return it
+        const token = tokenCookie.split('=')[1].trim();
+        if (token) {
+            return token;
+        }
+    }
+
+    // If no valid token in cookie, request a new one
+    const response = await makeRequest(API_ENDPOINTS.SESSIONS.GET_TOKEN + `?session_id=${sessionId}`);
+    return response.token;
 };
 
 // API functions
@@ -139,33 +163,64 @@ export const api = {
         getSessions: () => makeRequest(API_ENDPOINTS.USERS.GET_SESSIONS),
     },
     sessions: {
+        // Public routes (require only auth token)
         list: () => makeRequest(API_ENDPOINTS.SESSIONS.LIST),
         create: (data) => makeRequest(API_ENDPOINTS.SESSIONS.CREATE, {
             method: 'POST',
             body: JSON.stringify(data),
         }),
         join: (token) => makeRequest(API_ENDPOINTS.SESSIONS.JOIN(token)),
-        get: () => makeRequest(API_ENDPOINTS.SESSIONS.GET),
-        checkRole: () => makeRequest(API_ENDPOINTS.SESSIONS.CHECK_ROLE),
-        listMembers: () => makeRequest(API_ENDPOINTS.SESSIONS.LIST_MEMBERS),
-        kickMember: (memberId) => makeRequest(API_ENDPOINTS.SESSIONS.KICK_MEMBER(memberId)),
-        remove: () => makeRequest(API_ENDPOINTS.SESSIONS.REMOVE),
+        getShareInfo: (token) => makeRequest(API_ENDPOINTS.SESSIONS.GET_SHARE_INFO(token)),
+        getToken: (sessionId) => makeRequest(API_ENDPOINTS.SESSIONS.GET_TOKEN + `?session_id=${sessionId}`),
         createShareLink: (data) => makeRequest(API_ENDPOINTS.SESSIONS.CREATE_SHARE_LINK, {
             method: 'POST',
             body: JSON.stringify(data),
         }),
-        getShareInfo: (token) => makeRequest(API_ENDPOINTS.SESSIONS.GET_SHARE_INFO(token)),
-        getMessages: (params) => makeRequest(API_ENDPOINTS.SESSIONS.GET_MESSAGES(params)),
-        uploadMessageImage: (formData) => makeRequest(API_ENDPOINTS.SESSIONS.UPLOAD_MESSAGE_IMAGE, {
-            method: 'POST',
-            headers: {}, // Let browser set content-type for multipart/form-data
-            body: formData,
-        }),
-        getToken: () => makeRequest(API_ENDPOINTS.SESSIONS.GET_TOKEN),
-        refreshToken: () => makeRequest(API_ENDPOINTS.SESSIONS.REFRESH_TOKEN),
-        revokeToken: () => makeRequest(API_ENDPOINTS.SESSIONS.REVOKE_TOKEN, {
-            method: 'DELETE'
-        }),
+
+        // Protected routes (require session token)
+        // These methods will automatically get a session token if needed
+        async get(sessionId) {
+            await getSessionToken(sessionId);
+            return makeRequest(API_ENDPOINTS.SESSIONS.GET);
+        },
+        async checkRole(sessionId) {
+            await getSessionToken(sessionId);
+            return makeRequest(API_ENDPOINTS.SESSIONS.CHECK_ROLE);
+        },
+        async listMembers(sessionId) {
+            await getSessionToken(sessionId);
+            return makeRequest(API_ENDPOINTS.SESSIONS.LIST_MEMBERS);
+        },
+        async kickMember(sessionId, memberId) {
+            await getSessionToken(sessionId);
+            return makeRequest(API_ENDPOINTS.SESSIONS.KICK_MEMBER(memberId));
+        },
+        async remove(sessionId) {
+            await getSessionToken(sessionId);
+            return makeRequest(API_ENDPOINTS.SESSIONS.REMOVE);
+        },
+        async getMessages(sessionId, params) {
+            await getSessionToken(sessionId);
+            return makeRequest(API_ENDPOINTS.SESSIONS.GET_MESSAGES(params));
+        },
+        async uploadMessageImage(sessionId, formData) {
+            await getSessionToken(sessionId);
+            return makeRequest(API_ENDPOINTS.SESSIONS.UPLOAD_MESSAGE_IMAGE, {
+                method: 'POST',
+                headers: {}, // Let browser set content-type for multipart/form-data
+                body: formData,
+            });
+        },
+        async refreshToken(sessionId) {
+            await getSessionToken(sessionId);
+            return makeRequest(API_ENDPOINTS.SESSIONS.REFRESH_TOKEN);
+        },
+        async revokeToken(sessionId) {
+            await getSessionToken(sessionId);
+            return makeRequest(API_ENDPOINTS.SESSIONS.REVOKE_TOKEN, {
+                method: 'DELETE'
+            });
+        },
     },
     avatar: {
         upload: (formData) => makeRequest(API_ENDPOINTS.AVATAR.UPLOAD, {
@@ -174,4 +229,6 @@ export const api = {
             body: formData,
         }),
     },
-}; 
+};
+
+export { API_ENDPOINTS, isValidUUID, APIError }; 
