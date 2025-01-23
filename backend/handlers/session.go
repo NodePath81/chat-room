@@ -316,8 +316,8 @@ func (h *SessionHandler) RemoveSession(w http.ResponseWriter, r *http.Request) {
 }
 
 type ShareInfoResponse struct {
-	SessionName     string `json:"sessionName"`
-	InviterNickname string `json:"inviterNickname"`
+	SessionName     string `json:"session_name"`
+	InviterNickname string `json:"inviter_nickname"`
 }
 
 func (h *SessionHandler) GetShareInfo(w http.ResponseWriter, r *http.Request) {

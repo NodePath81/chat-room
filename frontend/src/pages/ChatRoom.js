@@ -103,19 +103,29 @@ function ChatRoom() {
                 return;
             }
 
-            setMessages(prev => 
-                beforeTimestamp ? [...newMessages, ...prev] : newMessages
+            // Sort messages by timestamp in ascending order (oldest first)
+            const sortedMessages = [...newMessages].sort((a, b) => 
+                new Date(a.timestamp) - new Date(b.timestamp)
             );
+
+            setMessages(prev => {
+                if (beforeTimestamp) {
+                    // When loading older messages, put them before existing messages
+                    return [...sortedMessages, ...prev];
+                } else {
+                    // For initial load, just use the sorted messages
+                    return sortedMessages;
+                }
+            });
             setHasMore(response.has_more);
 
             // Store the oldest message's timestamp
-            if (newMessages.length > 0) {
-                const timestamps = newMessages.map(msg => new Date(msg.timestamp).getTime());
-                oldestTimestampRef.current = new Date(Math.min(...timestamps)).toISOString();
+            if (sortedMessages.length > 0) {
+                oldestTimestampRef.current = sortedMessages[0].timestamp;
             }
 
             // Fetch usernames for all messages
-            const userIds = new Set(newMessages.map(msg => msg.user_id));
+            const userIds = new Set(sortedMessages.map(msg => msg.user_id));
             for (const userId of userIds) {
                 await fetchUsername(userId);
             }

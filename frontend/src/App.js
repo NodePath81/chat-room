@@ -23,7 +23,7 @@ function App() {
                     <Route path="/profile" element={<PrivateRoute><UserPage /></PrivateRoute>} />
                     <Route path="/sessions/:sessionId" element={<PrivateRoute><ChatRoom /></PrivateRoute>} />
                     <Route path="/sessions/:sessionId/manage" element={<PrivateRoute><SessionManagePage /></PrivateRoute>} />
-                    <Route path="/sessions/:sessionId/share" element={<PrivateRoute><SharePage /></PrivateRoute>} />
+                    <Route path="/share" element={<PrivateRoute><SharePage /></PrivateRoute>} />
                     <Route path="*" element={<Navigate to="/" />} />
                 </Routes>
             </Router>

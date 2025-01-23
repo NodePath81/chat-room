@@ -29,18 +29,15 @@ const SharePage = () => {
             }
 
             try {
-                const response = await fetch(`${API_ENDPOINTS.SESSIONS.GET_SHARE_INFO}?token=${token}`, {
-                    headers: {
-                        'Authorization': `Bearer ${authService.getToken()}`
-                    }
-                });
+                const response = await api.sessions.getShareInfo(token);
 
-                if (!response.ok) {
-                    throw new Error('Failed to get session information');
+                if (response.error) {
+                    setError(response.error);
+                    setIsLoading(false);
+                    return;
                 }
 
-                const data = await response.json();
-                setSessionInfo(data);
+                setSessionInfo(response);
                 setIsLoading(false);
             } catch (error) {
                 console.error('Error fetching session info:', error);
