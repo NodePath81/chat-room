@@ -5,6 +5,8 @@ import (
 	"context"
 	"net/http"
 	"strings"
+
+	"github.com/google/uuid"
 )
 
 func AuthMiddleware(next http.Handler) http.Handler {
@@ -28,13 +30,12 @@ func AuthMiddleware(next http.Handler) http.Handler {
 		}
 
 		// Store both claims and userID in context
-		ctx := context.WithValue(r.Context(), "claims", claims)
-		ctx = context.WithValue(ctx, auth.UserIDKey, claims.UserID)
+		ctx := context.WithValue(r.Context(), auth.UserIDKey, claims.UserID)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 
-func GetUserID(r *http.Request) uint {
-	userID, _ := r.Context().Value(auth.UserIDKey).(uint)
+func GetUserID(r *http.Request) uuid.UUID {
+	userID, _ := r.Context().Value(auth.UserIDKey).(uuid.UUID)
 	return userID
 }

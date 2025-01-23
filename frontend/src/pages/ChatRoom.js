@@ -158,26 +158,36 @@ function ChatRoom() {
     };
 
     const handleSendMessage = async (messageData) => {
-        if (!messageData.content || !messageData.type) return;
+        console.debug('ChatRoom: Handling message:', messageData);
+        
+        if (!messageData.content || !messageData.type) {
+            console.error('ChatRoom: Invalid message format:', messageData);
+            return;
+        }
         
         try {
             if (messageData.type === 'image') {
+                console.debug('ChatRoom: Processing image upload');
                 const formData = new FormData();
                 formData.append('image', messageData.content);
                 await api.sessions.uploadMessageImage(currentSessionId, formData);
             } else {
+                console.debug('ChatRoom: Sending text message');
                 await chatService.sendTextMessage(messageData.content);
             }
         } catch (error) {
-            console.error('Error sending message:', error);
+            console.error('ChatRoom: Error sending message:', error);
         }
     };
 
     const handleImageUpload = async (file) => {
         try {
-            await chatService.uploadImage(file);
+            console.debug('ChatRoom: Starting image upload:', file.name);
+            const response = await chatService.uploadImage(file);
+            console.debug('ChatRoom: Image upload completed:', response);
         } catch (error) {
-            console.error('Error uploading image:', error);
+            console.error('ChatRoom: Error uploading image:', error);
+            // TODO: Show error notification to user
         }
     };
 

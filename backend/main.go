@@ -59,7 +59,7 @@ func main() {
 	}
 
 	// Initialize handlers
-	wsHandler := handlers.NewWebSocketHandler(store)
+	wsHandler := handlers.NewWebSocketHandler(store, tokenManager)
 	authHandler := handlers.NewAuthHandler(store)
 	sessionHandler := handlers.NewSessionHandler(store, tokenManager)
 	userHandler := handlers.NewUserHandler(store)
@@ -108,7 +108,7 @@ func main() {
 			r.Post("/messages/upload", messageHandler.UploadMessageImage)
 			r.Get("/token/refresh", sessionHandler.RefreshSessionToken)
 			r.Delete("/token", sessionHandler.RevokeSessionToken)
-
+			r.Get("/wstoken", sessionHandler.GetWebSocketToken)
 			// Creator-only routes
 			r.Group(func(r chi.Router) {
 				r.Use(custommw.RequireRole("creator"))

@@ -1,3 +1,5 @@
+import { authService } from "./auth";
+
 // API configuration
 const API_BASE_URL = 'http://localhost:8080'; // or whatever port your backend is running on
 
@@ -102,14 +104,15 @@ const API_ENDPOINTS = {
         GET_TOKEN: `${API_BASE_URL}/api/sessions/token`,
         REFRESH_TOKEN: `${API_BASE_URL}/api/sessions/token/refresh`,
         REVOKE_TOKEN: `${API_BASE_URL}/api/sessions/token`,
+        GET_WS_TOKEN: `${API_BASE_URL}/api/sessions/wstoken`,
     },
     AVATAR: {
         UPLOAD: `${API_BASE_URL}/api/avatar`,
     },
     WEBSOCKET: {
-        CONNECT: (sessionId) => {
+        CONNECT: (sessionId, wsToken) => {
             validateSessionId(sessionId);
-            return `ws://localhost:8080/api/sessions/wschat?session_id=${sessionId}`;
+            return `ws://localhost:8080/ws?token=${wsToken}`;
         },
     },
 };
@@ -207,7 +210,9 @@ export const api = {
             await getSessionToken(sessionId);
             return makeRequest(API_ENDPOINTS.SESSIONS.UPLOAD_MESSAGE_IMAGE, {
                 method: 'POST',
-                headers: {}, // Let browser set content-type for multipart/form-data
+                headers: {
+                    'Authorization': `Bearer ${authService.getToken()}`
+                },
                 body: formData,
             });
         },
@@ -221,11 +226,17 @@ export const api = {
                 method: 'DELETE'
             });
         },
+        async getWsToken(sessionId) {
+            await getSessionToken(sessionId);
+            return makeRequest(API_ENDPOINTS.SESSIONS.GET_WS_TOKEN);
+        },
     },
     avatar: {
         upload: (formData) => makeRequest(API_ENDPOINTS.AVATAR.UPLOAD, {
             method: 'POST',
-            headers: {}, // Let browser set content-type for multipart/form-data
+            headers: {
+                'Authorization': `Bearer ${authService.getToken()}`
+            },
             body: formData,
         }),
     },

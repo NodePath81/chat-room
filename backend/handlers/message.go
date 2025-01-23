@@ -2,19 +2,17 @@ package handlers
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"path"
 	"time"
 
-	"chat-room/auth"
 	"chat-room/config"
+	"chat-room/middleware"
 	"chat-room/models"
 	"chat-room/s3"
 	"chat-room/store"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/minio/minio-go/v7"
 )
@@ -30,30 +28,12 @@ func NewMessageHandler(store store.Store, hub *WebSocketHandler) *MessageHandler
 
 // UploadMessageImage handles image upload for messages
 func (h *MessageHandler) UploadMessageImage(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
+	sessionClaims := middleware.GetSessionClaims(r)
 
-	userID := auth.GetUserIDFromContext(r)
-	if userID == uuid.Nil {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-
-	// Get session ID from URL
-	sessionID, err := uuid.Parse(chi.URLParam(r, "id"))
-	if err != nil {
-		http.Error(w, "Invalid session ID", http.StatusBadRequest)
-		return
-	}
-
-	// Verify user is a member of the session
-	role, err := h.store.GetUserSessionRole(r.Context(), userID, sessionID)
-	if err != nil || role == "" {
-		http.Error(w, "Not a member of this session", http.StatusForbidden)
-		return
-	}
+	userID := middleware.GetUserID(r)
 
 	// Parse multipart form
-	err = r.ParseMultipartForm(10 << 20) // 10 MB max
+	err := r.ParseMultipartForm(10 << 20) // 10 MB max
 	if err != nil {
 		http.Error(w, "Failed to parse form", http.StatusBadRequest)
 		return
@@ -95,7 +75,7 @@ func (h *MessageHandler) UploadMessageImage(w http.ResponseWriter, r *http.Reque
 		Type:      models.MessageTypeImage,
 		Content:   publicURL,
 		UserID:    userID,
-		SessionID: sessionID,
+		SessionID: sessionClaims.GroupID,
 		Timestamp: time.Now().UTC(),
 	}
 
@@ -105,10 +85,7 @@ func (h *MessageHandler) UploadMessageImage(w http.ResponseWriter, r *http.Reque
 	}
 
 	// Broadcast the message through WebSocket
-	h.hub.broadcast(sessionID, message)
+	h.hub.broadcast(sessionClaims.GroupID, message)
 
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"url":       publicURL,
-		"messageId": message.ID,
-	})
+	w.WriteHeader(http.StatusOK)
 }

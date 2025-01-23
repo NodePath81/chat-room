@@ -23,13 +23,21 @@ function SendBar({ onSendMessage, onImageUpload }) {
 
     const handleSendMessage = () => {
         if (message.trim()) {
-            onSendMessage(message);
+            console.debug('SendBar: Sending text message:', message.trim());
+            onSendMessage({
+                type: 'text',
+                content: message.trim()
+            });
             setMessage('');
         }
 
-        selectedImages.forEach(image => {
-            onImageUpload(image);
-        });
+        if (selectedImages.length > 0) {
+            console.debug('SendBar: Processing images:', selectedImages.length);
+            selectedImages.forEach(image => {
+                console.debug('SendBar: Uploading image:', image.name);
+                onImageUpload(image);
+            });
+        }
         
         setSelectedImages([]);
         setImagePreviewUrls([]);
@@ -37,6 +45,7 @@ function SendBar({ onSendMessage, onImageUpload }) {
 
     const handleKeyPress = (e) => {
         if (e.key === 'Enter' && !e.shiftKey) {
+            console.debug('SendBar: Enter key pressed, sending message');
             e.preventDefault();
             handleSendMessage();
         }

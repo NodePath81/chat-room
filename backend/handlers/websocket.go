@@ -33,9 +33,8 @@ type Client struct {
 }
 
 type WebSocketMessage struct {
-	Content   string             `json:"content"`
-	Type      models.MessageType `json:"type"`
-	SessionID uuid.UUID          `json:"sessionId"`
+	Content string             `json:"content"`
+	Type    models.MessageType `json:"type"`
 }
 
 type SessionClients struct {
@@ -73,13 +72,6 @@ func (h *WebSocketHandler) HandleWebSocket(w http.ResponseWriter, r *http.Reques
 
 	sessionID := claims.SessionID
 	userID := claims.UserID
-
-	// Verify session exists
-	_, err = h.store.GetSessionByID(r.Context(), sessionID)
-	if err != nil {
-		http.Error(w, "Session not found", http.StatusNotFound)
-		return
-	}
 
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
