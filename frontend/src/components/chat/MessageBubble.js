@@ -34,18 +34,24 @@ function MessageBubble({ message, user }) {
         minute: '2-digit'
     });
 
+    const getInitial = (nickname) => {
+        return nickname ? nickname.charAt(0).toUpperCase() : '?';
+    };
+
     return (
-        <div className="flex items-start space-x-2">
-            <div className="flex-shrink-0">
-                <img
-                    src={user?.avatar_url || '/default-avatar.png'}
-                    alt={user?.nickname || 'User'}
-                    className="w-8 h-8 rounded-full"
-                    onError={(e) => {
-                        e.target.onerror = null;
-                        e.target.src = '/default-avatar.png';
-                    }}
-                />
+        <div className="flex items-start space-x-2 mb-4">
+            <div className="flex-shrink-0 w-8 h-8">
+                {user?.avatar_url ? (
+                    <img
+                        src={user.avatar_url}
+                        alt={user?.nickname || 'User avatar'}
+                        className="w-8 h-8 rounded-full object-cover"
+                    />
+                ) : (
+                    <div className="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center text-white font-medium">
+                        {getInitial(user?.nickname)}
+                    </div>
+                )}
             </div>
             <div className="flex-1">
                 <div className="flex items-baseline space-x-2">
