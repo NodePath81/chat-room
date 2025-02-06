@@ -60,6 +60,26 @@ class SessionService {
         }
     }
 
+    async leaveSession(sessionId) {
+        try {
+            const response = await fetch(API_ENDPOINTS.SESSIONS.LEAVE(sessionId), {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${authService.getToken()}`
+                }
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to leave session');
+            }
+
+            return true;
+        } catch (error) {
+            console.error('Error leaving session:', error);
+            throw error;
+        }
+    }
+
     async getMessages(sessionId, beforeId = null, limit = 20) {
         try {
             const url = new URL(API_ENDPOINTS.SESSIONS.GET_MESSAGES(sessionId));

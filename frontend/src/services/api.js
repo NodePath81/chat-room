@@ -105,6 +105,7 @@ const API_ENDPOINTS = {
         REFRESH_TOKEN: `${API_BASE_URL}/api/sessions/token/refresh`,
         REVOKE_TOKEN: `${API_BASE_URL}/api/sessions/token`,
         GET_WS_TOKEN: `${API_BASE_URL}/api/sessions/wstoken`,
+        LEAVE: `${API_BASE_URL}/api/sessions/leave`,
     },
     AVATAR: {
         UPLOAD: `${API_BASE_URL}/api/avatar`,
@@ -127,14 +128,23 @@ const getSessionToken = async (sessionId) => {
     );
     
     if (tokenCookie) {
-        // If we have a cookie with the token, return it
+        // If we have a cookie with the token, verify it's still valid
         const token = tokenCookie.split('=')[1].trim();
         if (token) {
-            return token;
+            try {
+                // Try to make a request with the existing token
+                await makeRequest(API_ENDPOINTS.SESSIONS.CHECK_ROLE);
+                return token;
+            } catch (error) {
+                // If the token is expired or invalid, remove the cookie
+                document.cookie = `session_token_${sessionId}=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT`;
+                console.debug('Session token expired or invalid, requesting new token');
+            }
         }
     }
 
-    // If no valid token in cookie, request a new one
+    // If no valid token in cookie or token expired, request a new one
+    console.debug('Requesting new session token');
     const response = await makeRequest(API_ENDPOINTS.SESSIONS.GET_TOKEN + `?session_id=${sessionId}`);
     return response.token;
 };
@@ -200,7 +210,10 @@ export const api = {
         },
         async remove(sessionId) {
             await getSessionToken(sessionId);
-            return makeRequest(API_ENDPOINTS.SESSIONS.REMOVE);
+            await makeRequest(API_ENDPOINTS.SESSIONS.REMOVE);
+            // Remove the session cookie after successful removal
+            document.cookie = `session_token_${sessionId}=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT`;
+            return true;
         },
         async getMessages(sessionId, params) {
             await getSessionToken(sessionId);
@@ -229,6 +242,10 @@ export const api = {
         async getWsToken(sessionId) {
             await getSessionToken(sessionId);
             return makeRequest(API_ENDPOINTS.SESSIONS.GET_WS_TOKEN);
+        },
+        async leave(sessionId) {
+            await getSessionToken(sessionId);
+            return makeRequest(API_ENDPOINTS.SESSIONS.LEAVE);
         },
     },
     avatar: {

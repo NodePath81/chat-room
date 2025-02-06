@@ -109,6 +109,7 @@ func main() {
 			r.Get("/token/refresh", sessionHandler.RefreshSessionToken)
 			r.Delete("/token", sessionHandler.RevokeSessionToken)
 			r.Get("/wstoken", sessionHandler.GetWebSocketToken)
+			r.Get("/leave", sessionHandler.LeaveSession)
 			// Creator-only routes
 			r.Group(func(r chi.Router) {
 				r.Use(custommw.RequireRole("creator"))

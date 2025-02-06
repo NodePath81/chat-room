@@ -42,12 +42,6 @@ const SessionManagePage = () => {
             }
             setRole(roleData.role);
 
-            // If not creator, redirect to home
-            if (roleData.role !== 'creator') {
-                navigate('/');
-                return;
-            }
-
             // Fetch session details
             const sessionData = await api.sessions.get(sessionId);
             if (!sessionData) {
@@ -121,6 +115,21 @@ const SessionManagePage = () => {
         }
     };
 
+    const handleLeaveSession = async () => {
+        if (!window.confirm('Are you sure you want to leave this session?')) {
+            return;
+        }
+
+        try {
+            setError('');
+            await api.sessions.leave(sessionId);
+            navigate('/');
+        } catch (err) {
+            console.error('Error leaving session:', err);
+            setError(err.message || 'Failed to leave session');
+        }
+    };
+
     const fetchMemberDetails = async (memberId) => {
         try {
             const userData = await api.users.get(memberId);
@@ -159,7 +168,7 @@ const SessionManagePage = () => {
         );
     }
 
-    if (role !== 'creator' || !session) {
+    if (!session) {
         return null;
     }
 
@@ -184,52 +193,54 @@ const SessionManagePage = () => {
                     )}
                 </div>
 
-                {/* Share Link Generator */}
-                <div className="bg-white shadow-sm rounded-lg p-6">
-                    <h2 className="text-xl font-semibold text-gray-900 mb-4">Create Share Link</h2>
-                    <div className="space-y-4">
-                        <div className="flex items-center space-x-4">
-                            <label className="text-gray-700">Duration (days):</label>
-                            <select 
-                                value={duration} 
-                                onChange={(e) => setDuration(Number(e.target.value))}
-                                className="border rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                            >
-                                {[1, 3, 7, 14, 30].map(days => (
-                                    <option key={days} value={days}>{days} days</option>
-                                ))}
-                            </select>
-                            <button
-                                onClick={handleCreateShareLink}
-                                className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                            >
-                                Generate Link
-                            </button>
-                        </div>
-                        {shareLink && (
-                            <div className="mt-4">
-                                <label className="block text-gray-700 mb-2">Share Link:</label>
-                                <div className="flex items-center space-x-2">
-                                    <input
-                                        type="text"
-                                        value={shareLink}
-                                        readOnly
-                                        className="flex-1 border rounded-md px-3 py-2 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                    />
-                                    <button
-                                        onClick={() => {
-                                            navigator.clipboard.writeText(shareLink);
-                                            alert('Link copied to clipboard!');
-                                        }}
-                                        className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                                    >
-                                        Copy
-                                    </button>
-                                </div>
+                {/* Share Link Generator - Only for creator */}
+                {role === 'creator' && (
+                    <div className="bg-white shadow-sm rounded-lg p-6">
+                        <h2 className="text-xl font-semibold text-gray-900 mb-4">Create Share Link</h2>
+                        <div className="space-y-4">
+                            <div className="flex items-center space-x-4">
+                                <label className="text-gray-700">Duration (days):</label>
+                                <select 
+                                    value={duration} 
+                                    onChange={(e) => setDuration(Number(e.target.value))}
+                                    className="border rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                >
+                                    {[1, 3, 7, 14, 30].map(days => (
+                                        <option key={days} value={days}>{days} days</option>
+                                    ))}
+                                </select>
+                                <button
+                                    onClick={handleCreateShareLink}
+                                    className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                                >
+                                    Generate Link
+                                </button>
                             </div>
-                        )}
+                            {shareLink && (
+                                <div className="mt-4">
+                                    <label className="block text-gray-700 mb-2">Share Link:</label>
+                                    <div className="flex items-center space-x-2">
+                                        <input
+                                            type="text"
+                                            value={shareLink}
+                                            readOnly
+                                            className="flex-1 border rounded-md px-3 py-2 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                        />
+                                        <button
+                                            onClick={() => {
+                                                navigator.clipboard.writeText(shareLink);
+                                                alert('Link copied to clipboard!');
+                                            }}
+                                            className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                                        >
+                                            Copy
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
                     </div>
-                </div>
+                )}
 
                 {/* Members List */}
                 <div className="bg-white shadow-sm rounded-lg p-6">
@@ -237,6 +248,7 @@ const SessionManagePage = () => {
                     <div className="space-y-4">
                         {members.map(memberId => {
                             const member = memberDetails[memberId] || {};
+                            const isCreator = memberId === session?.creator_id;
                             return (
                                 <div key={memberId} className="flex items-center justify-between py-3 border-b border-gray-200 last:border-0">
                                     <div className="flex items-center space-x-3">
@@ -247,24 +259,22 @@ const SessionManagePage = () => {
                                                 className="w-10 h-10 rounded-full object-cover bg-gray-100"
                                             />
                                         ) : (
-                                            <div className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center">
-                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                                                </svg>
+                                            <div className="w-10 h-10 rounded-full bg-blue-500 flex items-center justify-center text-white font-medium">
+                                                {member.nickname ? member.nickname.charAt(0).toUpperCase() : '?'}
                                             </div>
                                         )}
                                         <div>
                                             <span className="font-medium text-gray-900">
                                                 {member.nickname || 'Loading...'}
                                             </span>
-                                            {memberId === session?.creator_id && (
+                                            {isCreator && (
                                                 <span className="ml-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
                                                     Creator
                                                 </span>
                                             )}
                                         </div>
                                     </div>
-                                    {memberId !== session?.creator_id && (
+                                    {role === 'creator' && !isCreator && (
                                         <button
                                             onClick={() => handleKickMember(memberId)}
                                             className="inline-flex items-center px-3 py-1.5 border border-transparent text-sm leading-4 font-medium rounded-md text-red-700 bg-red-100 hover:bg-red-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
@@ -278,15 +288,26 @@ const SessionManagePage = () => {
                     </div>
                 </div>
 
-                {/* Danger Zone */}
-                <div className="bg-red-50 shadow-sm rounded-lg p-6">
-                    <h2 className="text-xl font-semibold text-red-700 mb-4">Danger Zone</h2>
-                    <button
-                        onClick={handleRemoveSession}
-                        className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
-                    >
-                        Remove Session
-                    </button>
+                {/* Action Zone - Different for creator and member */}
+                <div className={`${role === 'creator' ? 'bg-red-50' : 'bg-gray-50'} shadow-sm rounded-lg p-6`}>
+                    <h2 className={`text-xl font-semibold ${role === 'creator' ? 'text-red-700' : 'text-gray-700'} mb-4`}>
+                        {role === 'creator' ? 'Danger Zone' : 'Session Actions'}
+                    </h2>
+                    {role === 'creator' ? (
+                        <button
+                            onClick={handleRemoveSession}
+                            className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+                        >
+                            Remove Session
+                        </button>
+                    ) : (
+                        <button
+                            onClick={handleLeaveSession}
+                            className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-gray-600 hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
+                        >
+                            Leave Session
+                        </button>
+                    )}
                 </div>
             </div>
         </div>

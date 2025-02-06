@@ -1,9 +1,9 @@
-FROM golang:1.23.4-alpine
+FROM golang:1.23.6
 
 WORKDIR /app
 
 # Install build dependencies
-RUN apk add --no-cache gcc musl-dev
+RUN apt-get update && apt-get install -y gcc libc6-dev
 
 # Copy go mod and sum files
 COPY go.mod go.sum ./

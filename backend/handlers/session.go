@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 	"strconv"
 	"time"
@@ -102,8 +103,10 @@ func (h *SessionHandler) GetSessions(w http.ResponseWriter, r *http.Request) {
 
 func (h *SessionHandler) GetSession(w http.ResponseWriter, r *http.Request) {
 	sessionID := middleware.GetSessionID(r)
+	log.Println("sessionID", sessionID)
 	session, err := h.store.GetSessionByID(r.Context(), sessionID)
 	if err != nil {
+		log.Println("error", err)
 		http.Error(w, "Session not found", http.StatusNotFound)
 		return
 	}
@@ -130,30 +133,8 @@ type RoleResponse struct {
 
 func (h *SessionHandler) CheckRole(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	sessionID := middleware.GetSessionID(r)
-	userID := auth.GetUserIDFromContext(r)
-
-	// Get session to check if user is creator
-	session, err := h.store.GetSessionByID(r.Context(), sessionID)
-	if err != nil {
-		http.Error(w, "Session not found", http.StatusNotFound)
-		return
-	}
-
-	// Check if user is creator
-	if session.CreatorID == userID {
-		json.NewEncoder(w).Encode(RoleResponse{Role: "creator"})
-		return
-	}
-
-	// Get user's role in the session
-	role, err := h.store.GetUserSessionRole(r.Context(), userID, sessionID)
-	if err != nil {
-		json.NewEncoder(w).Encode(RoleResponse{Role: "none"})
-		return
-	}
-
-	json.NewEncoder(w).Encode(RoleResponse{Role: role})
+	sessionClaims := middleware.GetSessionClaims(r)
+	json.NewEncoder(w).Encode(RoleResponse{Role: sessionClaims.Role})
 }
 
 func (h *SessionHandler) JoinSession(w http.ResponseWriter, r *http.Request) {
@@ -191,6 +172,27 @@ func (h *SessionHandler) JoinSession(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{"message": "Successfully joined session"})
+}
+
+// LeaveSession removes a normal user from a session
+func (h *SessionHandler) LeaveSession(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	sessionClaims := middleware.GetSessionClaims(r)
+	userID := auth.GetUserIDFromContext(r)
+
+	if sessionClaims.Role != "member" {
+		http.Error(w, "Only normal users can leave sessions", http.StatusForbidden)
+		return
+	}
+
+	err := h.store.RemoveUserFromSession(r.Context(), userID, sessionClaims.GroupID)
+	if err != nil {
+		http.Error(w, "Failed to leave session", http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{"message": "Successfully left session"})
 }
 
 type CreateShareLinkRequest struct {
@@ -310,6 +312,18 @@ func (h *SessionHandler) RemoveSession(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to commit transaction", http.StatusInternalServerError)
 		return
 	}
+
+	// Remove session token cookie
+	cookie := &http.Cookie{
+		Name:     "session_token_" + sessionID.String(),
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteStrictMode,
+		MaxAge:   -1, // Delete cookie
+	}
+	http.SetCookie(w, cookie)
 
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{"message": "Session removed successfully"})
