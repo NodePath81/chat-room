@@ -10,6 +10,7 @@ import (
 	"chat-room/handlers"
 	custommw "chat-room/middleware"
 	"chat-room/s3"
+	"chat-room/store/cache"
 	"chat-room/store/postgres"
 	"chat-room/token"
 
@@ -34,17 +35,24 @@ func main() {
 		cfg.DBName,
 	)
 
-	// Initialize store
-	store, err := postgres.New(context.Background(), dbURL)
+	// Initialize PostgreSQL store
+	pgStore, err := postgres.New(context.Background(), dbURL)
 	if err != nil {
-		log.Fatal("Failed to initialize store:", err)
+		log.Fatal("Failed to initialize PostgreSQL store:", err)
 	}
-	defer store.Close()
+	defer pgStore.Close()
 
 	// Apply migrations
-	if err := store.Migrate(context.Background()); err != nil {
+	if err := pgStore.Migrate(context.Background()); err != nil {
 		log.Fatal("Failed to apply migrations:", err)
 	}
+
+	// Initialize Redis cache layer
+	store, err := cache.New(cfg, pgStore)
+	if err != nil {
+		log.Fatal("Failed to initialize Redis cache:", err)
+	}
+	defer store.Close()
 
 	// Initialize MinIO
 	err = s3.Initialize(cfg)

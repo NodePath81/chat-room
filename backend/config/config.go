@@ -24,6 +24,12 @@ type Config struct {
 	MinioSecretKey  string
 	MinioBucketName string
 	MinioUseSSL     bool
+
+	// Redis configuration
+	RedisHost     string
+	RedisPort     string
+	RedisPassword string
+	RedisDB       int
 }
 
 var globalConfig *Config
@@ -53,6 +59,12 @@ func LoadConfig() (*Config, error) {
 		MinioSecretKey:  getEnv("MINIO_SECRET_KEY", "minioadmin"),
 		MinioBucketName: getEnv("MINIO_BUCKET_NAME", "avatars"),
 		MinioUseSSL:     getEnv("MINIO_USE_SSL", "false") == "true",
+
+		// Redis configuration
+		RedisHost:     getEnv("REDIS_HOST", "localhost"),
+		RedisPort:     getEnv("REDIS_PORT", "6379"),
+		RedisPassword: getEnv("REDIS_PASSWORD", ""),
+		RedisDB:       0,
 	}
 
 	return globalConfig, nil

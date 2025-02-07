@@ -33,6 +33,8 @@ type MessageStore interface {
 	CreateMessage(ctx context.Context, message *models.Message) error
 	GetMessagesBySessionID(ctx context.Context, sessionID uuid.UUID, limit int, before time.Time) ([]*models.Message, error)
 	DeleteMessage(ctx context.Context, id uuid.UUID) error
+	GetMessageIDsBySessionID(ctx context.Context, sessionID uuid.UUID, limit int, before time.Time) ([]uuid.UUID, error)
+	GetMessageByID(ctx context.Context, id uuid.UUID) (*models.Message, error)
 }
 
 // UserSessionStore handles operations at the intersection of users and sessions

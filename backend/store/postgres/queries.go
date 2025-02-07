@@ -32,9 +32,11 @@ const (
 	GetUserSessionRoleQuery QueryName = "GetUserSessionRole"
 
 	// Message queries
-	CreateMessageQuery        QueryName = "CreateMessage"
-	GetMessagesBySessionQuery QueryName = "GetMessagesBySessionID"
-	DeleteMessageQuery        QueryName = "DeleteMessage"
+	CreateMessageQuery          QueryName = "CreateMessage"
+	GetMessagesBySessionQuery   QueryName = "GetMessagesBySessionID"
+	DeleteMessageQuery          QueryName = "DeleteMessage"
+	GetMessageIDsBySessionQuery QueryName = "GetMessageIDsBySessionID"
+	GetMessageByIDQuery         QueryName = "GetMessageByID"
 )
 
 // queryStore holds all loaded SQL queries
