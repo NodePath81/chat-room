@@ -20,20 +20,24 @@ func (s *Store) RemoveUserFromSession(ctx context.Context, userID, sessionID uui
 		userID, sessionID)
 }
 
-func (s *Store) GetUserSessions(ctx context.Context, userID uuid.UUID) ([]*models.Session, error) {
-	var sessions []*models.Session
+func (s *Store) GetUserSessions(ctx context.Context, userID uuid.UUID) ([]*models.UserSession, error) {
+	var userSessions []*models.UserSession
 	err := s.loader.queryRows(ctx, GetUserSessionsQuery,
 		func(rows pgx.Rows) error {
 			for rows.Next() {
 				session := &models.Session{}
+				userSession := &models.UserSession{
+					UserID: userID,
+				}
 				err := rows.Scan(
 					&session.ID, &session.Name, &session.CreatorID,
-					&session.CreatedAt,
+					&session.CreatedAt, &userSession.Role, &userSession.JoinedAt,
 				)
 				if err != nil {
 					return err
 				}
-				sessions = append(sessions, session)
+				userSession.SessionID = session.ID
+				userSessions = append(userSessions, userSession)
 			}
 			return nil
 		},
@@ -41,7 +45,7 @@ func (s *Store) GetUserSessions(ctx context.Context, userID uuid.UUID) ([]*model
 	if err != nil {
 		return nil, err
 	}
-	return sessions, nil
+	return userSessions, nil
 }
 
 func (s *Store) GetSessionUsers(ctx context.Context, sessionID uuid.UUID) ([]*models.User, error) {
@@ -79,4 +83,44 @@ func (s *Store) GetUserSessionRole(ctx context.Context, userID, sessionID uuid.U
 		return "", err
 	}
 	return role, nil
+}
+
+func (s *Store) GetSessionIDsByUserID(ctx context.Context, userID uuid.UUID) ([]uuid.UUID, error) {
+	var sessionIDs []uuid.UUID
+	err := s.loader.queryRows(ctx, GetSessionIDsByUserIDQuery,
+		func(rows pgx.Rows) error {
+			for rows.Next() {
+				var id uuid.UUID
+				if err := rows.Scan(&id); err != nil {
+					return err
+				}
+				sessionIDs = append(sessionIDs, id)
+			}
+			return nil
+		},
+		userID)
+	if err != nil {
+		return nil, err
+	}
+	return sessionIDs, nil
+}
+
+func (s *Store) GetUserIDsBySessionID(ctx context.Context, sessionID uuid.UUID) ([]uuid.UUID, error) {
+	var userIDs []uuid.UUID
+	err := s.loader.queryRows(ctx, GetUserIDsBySessionIDQuery,
+		func(rows pgx.Rows) error {
+			for rows.Next() {
+				var id uuid.UUID
+				if err := rows.Scan(&id); err != nil {
+					return err
+				}
+				userIDs = append(userIDs, id)
+			}
+			return nil
+		},
+		sessionID)
+	if err != nil {
+		return nil, err
+	}
+	return userIDs, nil
 }

@@ -56,16 +56,20 @@ func TestUserSessionStore(t *testing.T) {
 		require.NoError(t, err)
 
 		// Get sessions for user2
-		sessions, err := store.GetUserSessions(helper.ctx, user2.ID)
+		userSessions, err := store.GetUserSessions(helper.ctx, user2.ID)
 		require.NoError(t, err)
-		assert.Len(t, sessions, 2)
+		assert.Len(t, userSessions, 2)
 
-		sessionIDs := make(map[uuid.UUID]bool)
-		for _, s := range sessions {
-			sessionIDs[s.ID] = true
+		// Verify session IDs and roles
+		sessionMap := make(map[uuid.UUID]string)
+		for _, us := range userSessions {
+			sessionMap[us.SessionID] = us.Role
+			assert.Equal(t, user2.ID, us.UserID)
+			assert.False(t, us.JoinedAt.IsZero())
 		}
-		assert.True(t, sessionIDs[session.ID])
-		assert.True(t, sessionIDs[session2.ID])
+
+		assert.Equal(t, "member", sessionMap[session.ID])
+		assert.Equal(t, "member", sessionMap[session2.ID])
 	})
 
 	t.Run("GetSessionUsers", func(t *testing.T) {
@@ -103,10 +107,10 @@ func TestUserSessionStore(t *testing.T) {
 		assert.Len(t, users, 1) // Only creator remains
 
 		// Verify user's sessions no longer include this session
-		sessions, err := store.GetUserSessions(helper.ctx, user2.ID)
+		userSessions, err := store.GetUserSessions(helper.ctx, user2.ID)
 		require.NoError(t, err)
-		for _, s := range sessions {
-			assert.NotEqual(t, session.ID, s.ID)
+		for _, us := range userSessions {
+			assert.NotEqual(t, session.ID, us.SessionID)
 		}
 	})
 
@@ -117,9 +121,9 @@ func TestUserSessionStore(t *testing.T) {
 		assert.Empty(t, role)
 
 		// Try to get sessions for non-existent user
-		sessions, err := store.GetUserSessions(helper.ctx, uuid.New())
+		userSessions, err := store.GetUserSessions(helper.ctx, uuid.New())
 		require.NoError(t, err)
-		assert.Empty(t, sessions)
+		assert.Empty(t, userSessions)
 
 		// Try to get users for non-existent session
 		users, err := store.GetSessionUsers(helper.ctx, uuid.New())

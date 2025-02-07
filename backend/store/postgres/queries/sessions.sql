@@ -8,7 +8,8 @@ FROM sessions
 WHERE id = $1;
 
 -- name: GetUserSessions :many
-SELECT s.id, s.name, s.creator_id, s.created_at
+SELECT s.id, s.name, s.creator_id, s.created_at,
+       us.role, us.joined_at
 FROM sessions s
 JOIN user_sessions us ON s.id = us.session_id
 WHERE us.user_id = $1;
@@ -39,4 +40,19 @@ WHERE us.session_id = $1;
 -- name: GetUserSessionRole :one
 SELECT role
 FROM user_sessions
-WHERE user_id = $1 AND session_id = $2; 
+WHERE user_id = $1 AND session_id = $2;
+
+-- name: GetSessionIDsByUserID :many
+SELECT session_id
+FROM user_sessions
+WHERE user_id = $1;
+
+-- name: GetUserIDsBySessionID :many
+SELECT user_id
+FROM user_sessions
+WHERE session_id = $1;
+
+-- name: GetSessionsByIDs :many
+SELECT id, name, creator_id, created_at
+FROM sessions
+WHERE id = ANY($1); 

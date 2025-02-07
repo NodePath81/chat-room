@@ -63,3 +63,27 @@ func (s *Store) UpdateSession(ctx context.Context, session *models.Session) erro
 func (s *Store) DeleteSession(ctx context.Context, id uuid.UUID) error {
 	return s.loader.exec(ctx, DeleteSessionQuery, id)
 }
+
+func (s *Store) GetSessionsByIDs(ctx context.Context, ids []uuid.UUID) ([]*models.Session, error) {
+	var sessions []*models.Session
+	err := s.loader.queryRows(ctx, GetSessionsByIDsQuery,
+		func(rows pgx.Rows) error {
+			for rows.Next() {
+				session := &models.Session{}
+				err := rows.Scan(
+					&session.ID, &session.Name, &session.CreatorID,
+					&session.CreatedAt,
+				)
+				if err != nil {
+					return err
+				}
+				sessions = append(sessions, session)
+			}
+			return nil
+		},
+		ids)
+	if err != nil {
+		return nil, err
+	}
+	return sessions, nil
+}

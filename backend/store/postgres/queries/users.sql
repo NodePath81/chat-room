@@ -35,4 +35,9 @@ SELECT EXISTS(
     SELECT 1
     FROM users
     WHERE nickname = $1
-) AS exists; 
+) AS exists;
+
+-- name: GetUsersByIDs :many
+SELECT id, username, password, nickname, avatar_url, created_at
+FROM users
+WHERE id = ANY($1); 

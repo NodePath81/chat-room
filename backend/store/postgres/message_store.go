@@ -23,30 +23,6 @@ func (s *Store) CreateMessage(ctx context.Context, message *models.Message) erro
 		message.SessionID, message.Timestamp)
 }
 
-func (s *Store) GetMessagesBySessionID(ctx context.Context, sessionID uuid.UUID, limit int, before time.Time) ([]*models.Message, error) {
-	var messages []*models.Message
-	err := s.loader.queryRows(ctx, GetMessagesBySessionQuery,
-		func(rows pgx.Rows) error {
-			for rows.Next() {
-				msg := &models.Message{}
-				err := rows.Scan(
-					&msg.ID, &msg.Type, &msg.Content, &msg.UserID,
-					&msg.SessionID, &msg.Timestamp,
-				)
-				if err != nil {
-					return err
-				}
-				messages = append(messages, msg)
-			}
-			return nil
-		},
-		sessionID, before, limit)
-	if err != nil {
-		return nil, err
-	}
-	return messages, nil
-}
-
 func (s *Store) GetMessageIDsBySessionID(ctx context.Context, sessionID uuid.UUID, limit int, before time.Time) ([]uuid.UUID, error) {
 	var messageIDs []uuid.UUID
 	err := s.loader.queryRows(ctx, GetMessageIDsBySessionQuery,
@@ -85,4 +61,28 @@ func (s *Store) GetMessageByID(ctx context.Context, id uuid.UUID) (*models.Messa
 
 func (s *Store) DeleteMessage(ctx context.Context, id uuid.UUID) error {
 	return s.loader.exec(ctx, DeleteMessageQuery, id)
+}
+
+func (s *Store) GetMessagesByIDs(ctx context.Context, ids []uuid.UUID) ([]*models.Message, error) {
+	var messages []*models.Message
+	err := s.loader.queryRows(ctx, GetMessagesByIDsQuery,
+		func(rows pgx.Rows) error {
+			for rows.Next() {
+				msg := &models.Message{}
+				err := rows.Scan(
+					&msg.ID, &msg.Type, &msg.Content, &msg.UserID,
+					&msg.SessionID, &msg.Timestamp,
+				)
+				if err != nil {
+					return err
+				}
+				messages = append(messages, msg)
+			}
+			return nil
+		},
+		ids)
+	if err != nil {
+		return nil, err
+	}
+	return messages, nil
 }

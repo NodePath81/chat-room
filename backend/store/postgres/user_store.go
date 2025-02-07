@@ -85,3 +85,27 @@ func (s *Store) CheckNicknameExists(ctx context.Context, nickname string) (bool,
 	}
 	return exists, nil
 }
+
+func (s *Store) GetUsersByIDs(ctx context.Context, ids []uuid.UUID) ([]*models.User, error) {
+	var users []*models.User
+	err := s.loader.queryRows(ctx, GetUsersByIDsQuery,
+		func(rows pgx.Rows) error {
+			for rows.Next() {
+				user := &models.User{}
+				err := rows.Scan(
+					&user.ID, &user.Username, &user.Password,
+					&user.Nickname, &user.AvatarURL, &user.CreatedAt,
+				)
+				if err != nil {
+					return err
+				}
+				users = append(users, user)
+			}
+			return nil
+		},
+		ids)
+	if err != nil {
+		return nil, err
+	}
+	return users, nil
+}

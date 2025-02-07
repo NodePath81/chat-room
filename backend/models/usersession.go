@@ -12,5 +12,5 @@ type UserSession struct {
 	SessionID      uuid.UUID `json:"session_id"`
 	Role           string    `json:"role"`
 	JoinedAt       time.Time `json:"joined_at"`
-	LastReceivedAt time.Time `json:"last_received"`
+	LastReceivedAt time.Time `json:"-"`
 }

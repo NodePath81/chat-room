@@ -14,6 +14,7 @@ const (
 	// User queries
 	CreateUserQuery          QueryName = "CreateUser"
 	GetUserByIDQuery         QueryName = "GetUserByID"
+	GetUsersByIDsQuery       QueryName = "GetUsersByIDs"
 	GetUserByUsernameQuery   QueryName = "GetUserByUsername"
 	UpdateUserQuery          QueryName = "UpdateUser"
 	DeleteUserQuery          QueryName = "DeleteUser"
@@ -21,21 +22,24 @@ const (
 	CheckNicknameExistsQuery QueryName = "CheckNicknameExists"
 
 	// Session queries
-	CreateSessionQuery      QueryName = "CreateSession"
-	GetSessionByIDQuery     QueryName = "GetSessionByID"
-	GetUserSessionsQuery    QueryName = "GetUserSessions"
-	UpdateSessionQuery      QueryName = "UpdateSession"
-	DeleteSessionQuery      QueryName = "DeleteSession"
-	AddUserToSessionQuery   QueryName = "AddUserToSession"
-	RemoveUserFromSession   QueryName = "RemoveUserFromSession"
-	GetSessionUsersQuery    QueryName = "GetSessionUsers"
-	GetUserSessionRoleQuery QueryName = "GetUserSessionRole"
+	CreateSessionQuery         QueryName = "CreateSession"
+	GetSessionByIDQuery        QueryName = "GetSessionByID"
+	GetSessionsByIDsQuery      QueryName = "GetSessionsByIDs"
+	GetUserSessionsQuery       QueryName = "GetUserSessions"
+	UpdateSessionQuery         QueryName = "UpdateSession"
+	DeleteSessionQuery         QueryName = "DeleteSession"
+	AddUserToSessionQuery      QueryName = "AddUserToSession"
+	RemoveUserFromSession      QueryName = "RemoveUserFromSession"
+	GetSessionUsersQuery       QueryName = "GetSessionUsers"
+	GetUserSessionRoleQuery    QueryName = "GetUserSessionRole"
+	GetSessionIDsByUserIDQuery QueryName = "GetSessionIDsByUserID"
+	GetUserIDsBySessionIDQuery QueryName = "GetUserIDsBySessionID"
 
 	// Message queries
 	CreateMessageQuery          QueryName = "CreateMessage"
-	GetMessagesBySessionQuery   QueryName = "GetMessagesBySessionID"
 	DeleteMessageQuery          QueryName = "DeleteMessage"
 	GetMessageIDsBySessionQuery QueryName = "GetMessageIDsBySessionID"
+	GetMessagesByIDsQuery       QueryName = "GetMessagesByIDs"
 	GetMessageByIDQuery         QueryName = "GetMessageByID"
 )
 

@@ -29,14 +29,16 @@ type CachedSession struct {
 
 const (
 	// Cache keys
-	userKey    = "user:%s"    // user:{userID}
-	sessionKey = "session:%s" // session:{sessionID}
-	messageKey = "msg:%s"     // msg:{messageID}
+	userKey         = "user:%s"          // user:{userID}
+	sessionKey      = "session:%s"       // session:{sessionID}
+	messageKey      = "msg:%s"           // msg:{messageID}
+	userSessionsKey = "user:%s:sessions" // user:{userID}:sessions
 
 	// Cache expiration times
-	userExpiration    = 30 * time.Minute
-	sessionExpiration = 15 * time.Minute
-	messageExpiration = 1 * time.Hour
+	userExpiration        = 30 * time.Minute
+	sessionExpiration     = 15 * time.Minute
+	messageExpiration     = 1 * time.Hour
+	userSessionExpiration = 10 * time.Minute
 )
 
 type RedisStore struct {
@@ -97,29 +99,8 @@ func (s *RedisStore) CreateUser(ctx context.Context, user *models.User) error {
 	return s.cacheUser(ctx, user)
 }
 
-func (s *RedisStore) GetUserByID(ctx context.Context, id uuid.UUID) (*models.User, error) {
-	key := fmt.Sprintf(userKey, id)
-	var cachedUser CachedUser
-	if err := s.getFromCache(ctx, key, &cachedUser); err == nil {
-		// Get full user from store for sensitive fields
-		fullUser, err := s.store.GetUserByID(ctx, id)
-		if err != nil {
-			return nil, err
-		}
-		fullUser.Nickname = cachedUser.Nickname
-		fullUser.AvatarURL = cachedUser.AvatarURL
-		return fullUser, nil
-	}
-
-	user, err := s.store.GetUserByID(ctx, id)
-	if err != nil {
-		return nil, err
-	}
-
-	if err := s.cacheUser(ctx, user); err != nil {
-		fmt.Printf("Failed to cache user: %v\n", err)
-	}
-	return user, nil
+func (s *RedisStore) GetUsersByIDs(ctx context.Context, ids []uuid.UUID) ([]*models.User, error) {
+	return s.store.GetUsersByIDs(ctx, ids)
 }
 
 func (s *RedisStore) UpdateUser(ctx context.Context, user *models.User) error {
@@ -145,22 +126,8 @@ func (s *RedisStore) CreateSession(ctx context.Context, session *models.Session)
 	return s.cacheSession(ctx, session)
 }
 
-func (s *RedisStore) GetSessionByID(ctx context.Context, id uuid.UUID) (*models.Session, error) {
-	key := fmt.Sprintf(sessionKey, id)
-	var cached CachedSession
-	if err := s.getFromCache(ctx, key, &cached); err == nil {
-		return cached.Session, nil
-	}
-
-	session, err := s.store.GetSessionByID(ctx, id)
-	if err != nil {
-		return nil, err
-	}
-
-	if err := s.cacheSession(ctx, session); err != nil {
-		fmt.Printf("Failed to cache session: %v\n", err)
-	}
-	return session, nil
+func (s *RedisStore) GetSessionsByIDs(ctx context.Context, ids []uuid.UUID) ([]*models.Session, error) {
+	return s.store.GetSessionsByIDs(ctx, ids)
 }
 
 func (s *RedisStore) UpdateSession(ctx context.Context, session *models.Session) error {
@@ -186,22 +153,8 @@ func (s *RedisStore) CreateMessage(ctx context.Context, message *models.Message)
 	return s.cacheMessage(ctx, message)
 }
 
-func (s *RedisStore) GetMessageByID(ctx context.Context, id uuid.UUID) (*models.Message, error) {
-	key := fmt.Sprintf(messageKey, id)
-	message := &models.Message{}
-	if err := s.getFromCache(ctx, key, message); err == nil {
-		return message, nil
-	}
-
-	message, err := s.store.GetMessageByID(ctx, id)
-	if err != nil {
-		return nil, err
-	}
-
-	if err := s.cacheMessage(ctx, message); err != nil {
-		fmt.Printf("Failed to cache message: %v\n", err)
-	}
-	return message, nil
+func (s *RedisStore) GetMessagesByIDs(ctx context.Context, ids []uuid.UUID) ([]*models.Message, error) {
+	return s.store.GetMessagesByIDs(ctx, ids)
 }
 
 func (s *RedisStore) DeleteMessage(ctx context.Context, id uuid.UUID) error {
@@ -213,50 +166,55 @@ func (s *RedisStore) DeleteMessage(ctx context.Context, id uuid.UUID) error {
 }
 
 // UserSession operations
-func (s *RedisStore) GetSessionUsers(ctx context.Context, sessionID uuid.UUID) ([]*models.User, error) {
-	key := fmt.Sprintf(sessionKey, sessionID)
-	var cached CachedSession
-	if err := s.getFromCache(ctx, key, &cached); err == nil && cached.Members != nil {
-		users := make([]*models.User, len(cached.Members))
-		for i, member := range cached.Members {
-			fullUser, err := s.GetUserByID(ctx, member.ID)
-			if err != nil {
-				return nil, err
-			}
-			users[i] = fullUser
-		}
-		return users, nil
+func (s *RedisStore) AddUserToSession(ctx context.Context, userID, sessionID uuid.UUID, role string) error {
+	if err := s.store.AddUserToSession(ctx, userID, sessionID, role); err != nil {
+		return err
 	}
+	s.invalidateCache(ctx,
+		fmt.Sprintf(sessionKey, sessionID),
+		fmt.Sprintf(userSessionsKey, userID),
+	)
+	return nil
+}
 
-	users, err := s.store.GetSessionUsers(ctx, sessionID)
-	if err != nil {
-		return nil, err
+func (s *RedisStore) RemoveUserFromSession(ctx context.Context, userID, sessionID uuid.UUID) error {
+	if err := s.store.RemoveUserFromSession(ctx, userID, sessionID); err != nil {
+		return err
 	}
+	s.invalidateCache(ctx,
+		fmt.Sprintf(sessionKey, sessionID),
+		fmt.Sprintf(userSessionsKey, userID),
+	)
+	return nil
+}
 
-	// Update session cache with members
-	session, err := s.store.GetSessionByID(ctx, sessionID)
-	if err != nil {
-		return nil, err
-	}
+func (s *RedisStore) GetSessionIDsByUserID(ctx context.Context, userID uuid.UUID) ([]uuid.UUID, error) {
+	return s.store.GetSessionIDsByUserID(ctx, userID)
+}
 
-	cachedUsers := make([]*CachedUser, len(users))
-	for i, user := range users {
-		cachedUsers[i] = &CachedUser{
-			ID:        user.ID,
-			Nickname:  user.Nickname,
-			AvatarURL: user.AvatarURL,
-		}
-	}
+func (s *RedisStore) GetUserIDsBySessionID(ctx context.Context, sessionID uuid.UUID) ([]uuid.UUID, error) {
+	return s.store.GetUserIDsBySessionID(ctx, sessionID)
+}
 
-	cached = CachedSession{
-		Session: session,
-		Members: cachedUsers,
-	}
-	if err := s.setCache(ctx, key, cached, sessionExpiration); err != nil {
-		fmt.Printf("Failed to cache session with members: %v\n", err)
-	}
+// Pass-through methods
+func (s *RedisStore) GetUserByUsername(ctx context.Context, username string) (*models.User, error) {
+	return s.store.GetUserByUsername(ctx, username)
+}
 
-	return users, nil
+func (s *RedisStore) CheckUsernameExists(ctx context.Context, username string) (bool, error) {
+	return s.store.CheckUsernameExists(ctx, username)
+}
+
+func (s *RedisStore) CheckNicknameExists(ctx context.Context, nickname string) (bool, error) {
+	return s.store.CheckNicknameExists(ctx, nickname)
+}
+
+func (s *RedisStore) GetMessageIDsBySessionID(ctx context.Context, sessionID uuid.UUID, limit int, before time.Time) ([]uuid.UUID, error) {
+	return s.store.GetMessageIDsBySessionID(ctx, sessionID, limit, before)
+}
+
+func (s *RedisStore) BeginTx(ctx context.Context) (store.Transaction, error) {
+	return s.store.BeginTx(ctx)
 }
 
 // Cache helpers
@@ -283,53 +241,4 @@ func (s *RedisStore) cacheSession(ctx context.Context, session *models.Session) 
 func (s *RedisStore) cacheMessage(ctx context.Context, message *models.Message) error {
 	key := fmt.Sprintf(messageKey, message.ID)
 	return s.setCache(ctx, key, message, messageExpiration)
-}
-
-// Pass-through methods
-func (s *RedisStore) GetUserByUsername(ctx context.Context, username string) (*models.User, error) {
-	return s.store.GetUserByUsername(ctx, username)
-}
-
-func (s *RedisStore) CheckUsernameExists(ctx context.Context, username string) (bool, error) {
-	return s.store.CheckUsernameExists(ctx, username)
-}
-
-func (s *RedisStore) CheckNicknameExists(ctx context.Context, nickname string) (bool, error) {
-	return s.store.CheckNicknameExists(ctx, nickname)
-}
-
-func (s *RedisStore) GetMessagesBySessionID(ctx context.Context, sessionID uuid.UUID, limit int, before time.Time) ([]*models.Message, error) {
-	return s.store.GetMessagesBySessionID(ctx, sessionID, limit, before)
-}
-
-func (s *RedisStore) GetMessageIDsBySessionID(ctx context.Context, sessionID uuid.UUID, limit int, before time.Time) ([]uuid.UUID, error) {
-	return s.store.GetMessageIDsBySessionID(ctx, sessionID, limit, before)
-}
-
-func (s *RedisStore) AddUserToSession(ctx context.Context, userID, sessionID uuid.UUID, role string) error {
-	if err := s.store.AddUserToSession(ctx, userID, sessionID, role); err != nil {
-		return err
-	}
-	s.invalidateCache(ctx, fmt.Sprintf(sessionKey, sessionID))
-	return nil
-}
-
-func (s *RedisStore) RemoveUserFromSession(ctx context.Context, userID, sessionID uuid.UUID) error {
-	if err := s.store.RemoveUserFromSession(ctx, userID, sessionID); err != nil {
-		return err
-	}
-	s.invalidateCache(ctx, fmt.Sprintf(sessionKey, sessionID))
-	return nil
-}
-
-func (s *RedisStore) GetUserSessions(ctx context.Context, userID uuid.UUID) ([]*models.Session, error) {
-	return s.store.GetUserSessions(ctx, userID)
-}
-
-func (s *RedisStore) GetUserSessionRole(ctx context.Context, userID, sessionID uuid.UUID) (string, error) {
-	return s.store.GetUserSessionRole(ctx, userID, sessionID)
-}
-
-func (s *RedisStore) BeginTx(ctx context.Context) (store.Transaction, error) {
-	return s.store.BeginTx(ctx)
 }
