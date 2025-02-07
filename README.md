@@ -219,9 +219,3 @@ This project is licensed under the MIT License. See the [LICENSE](LICENSE) file 
 
 ---
 
-## Additional Resources
-
-- **Frontend Documentation:** Refer to `frontend/README.md` for details on running and developing the React application.
-- **Backend Documentation:** The backend's source code in `backend/main.go` and the associated handler, middleware, and store packages contain detailed information on all available endpoints and business logic.
-
-Enjoy the Chat Room Application and happy coding!
