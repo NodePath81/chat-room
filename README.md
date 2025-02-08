@@ -166,47 +166,6 @@ The frontend configuration is managed via the file `frontend/src/config.js`, whi
 
 ---
 
-## API Endpoints
-
-The backend exposes a variety of RESTful endpoints, including:
-
-- **Authentication:**
-  - `POST /api/auth/register` – Register a new user.
-  - `POST /api/auth/login` – Login a user and return a JWT token.
-
-- **Sessions:**
-  - `GET /api/sessions/ids` – Get all session IDs for the current user.
-  - `POST /api/sessions` – Create a new session.
-  - `GET /api/sessions/session` – Get session details.
-  - `GET /api/sessions/role` – Check user's role in a session.
-  - `POST /api/sessions/messages/upload` – Upload an image message.
-  - `GET /api/sessions/wstoken` – Get WebSocket token for real-time messaging.
-
-- **Messages:**
-  - Text messages are sent via WebSocket connection.
-  - Image messages are uploaded via dedicated API endpoint.
-  - Messages are retrieved with pagination support.
-
-For complete details, refer to the [backend source code](backend/main.go) and relevant handler files.
-
----
-
-## Testing
-
-### Frontend
-- Run tests with:
-  ```bash
-  yarn test
-  ```
-
-### Backend
-- Use Go's built-in testing tools. For example:
-  ```bash
-  go test ./...
-  ```
-
----
-
 ## Deployment
 
 - **Using Docker:**  
