@@ -80,7 +80,7 @@ func (h *WebSocketHandler) HandleWebSocket(w http.ResponseWriter, r *http.Reques
 	}
 
 	// Get user info
-	user, err := h.store.GetUserByID(r.Context(), userID)
+	user, err := h.store.GetUsersByIDs(r.Context(), []uuid.UUID{userID})
 	if err != nil {
 		conn.WriteJSON(map[string]string{"error": "user not found"})
 		conn.Close()
@@ -89,10 +89,10 @@ func (h *WebSocketHandler) HandleWebSocket(w http.ResponseWriter, r *http.Reques
 
 	// Create new client
 	client := &Client{
-		UserID:    user.ID,
-		Username:  user.Username,
-		Nickname:  user.Nickname,
-		AvatarURL: user.AvatarURL,
+		UserID:    user[0].ID,
+		Username:  user[0].Username,
+		Nickname:  user[0].Nickname,
+		AvatarURL: user[0].AvatarURL,
 		Conn:      conn,
 	}
 
@@ -123,12 +123,12 @@ func (h *WebSocketHandler) HandleWebSocket(w http.ResponseWriter, r *http.Reques
 
 			// Validate message type - only allow text messages
 			if wsMsg.Type != models.MessageTypeText {
-				log.Printf("Rejected non-text message from user %s: type=%v", user.Username, wsMsg.Type)
+				log.Printf("Rejected non-text message from user %s: type=%v", user[0].Username, wsMsg.Type)
 				conn.WriteJSON(map[string]string{"error": "only text messages are allowed via WebSocket"})
 				continue
 			}
 
-			log.Printf("Received message from user %s in session %s: %+v", user.Username, sessionID, wsMsg)
+			log.Printf("Received message from user %s in session %s: %+v", user[0].Username, sessionID, wsMsg)
 
 			message := &models.Message{
 				ID:        uuid.New(),

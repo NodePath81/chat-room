@@ -35,26 +35,35 @@ type UserSessionResponse struct {
 func (h *UserHandler) GetUser(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	userID, err := uuid.Parse(chi.URLParam(r, "id"))
-	if err != nil {
-		http.Error(w, "Invalid user ID", http.StatusBadRequest)
-		return
-	}
+	userID := auth.GetUserIDFromContext(r)
 
-	user, err := h.store.GetUserByID(r.Context(), userID)
-	if err != nil {
+	user, err := h.store.GetUsersByIDs(r.Context(), []uuid.UUID{userID})
+	if err != nil || len(user) == 0 {
 		http.Error(w, "User not found", http.StatusNotFound)
 		return
 	}
 
-	response := map[string]interface{}{
-		"id":         user.ID,
-		"username":   user.Username,
-		"nickname":   user.Nickname,
-		"avatar_url": user.AvatarURL,
-	}
+	response := user[0]
 
 	json.NewEncoder(w).Encode(response)
+}
+
+func (h *UserHandler) PostFetchUsersByIDs(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	var req BatchIDsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request format", http.StatusBadRequest)
+		return
+	}
+
+	users, err := h.store.GetUsersByIDs(r.Context(), req.IDs)
+	if err != nil {
+		http.Error(w, "Error fetching users", http.StatusInternalServerError)
+		return
+	}
+
+	json.NewEncoder(w).Encode(users)
 }
 
 func (h *UserHandler) UpdateUsername(w http.ResponseWriter, r *http.Request) {
@@ -90,15 +99,15 @@ func (h *UserHandler) UpdateUsername(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get current user
-	user, err := h.store.GetUserByID(r.Context(), userID)
-	if err != nil {
+	user, err := h.store.GetUsersByIDs(r.Context(), []uuid.UUID{userID})
+	if err != nil || len(user) == 0 {
 		http.Error(w, "User not found", http.StatusNotFound)
 		return
 	}
 
 	// Update username
-	user.Username = req.Username
-	if err := h.store.UpdateUser(r.Context(), user); err != nil {
+	user[0].Username = req.Username
+	if err := h.store.UpdateUser(r.Context(), user[0]); err != nil {
 		http.Error(w, "Error updating username", http.StatusInternalServerError)
 		return
 	}
@@ -140,47 +149,19 @@ func (h *UserHandler) UpdateNickname(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get current user
-	user, err := h.store.GetUserByID(r.Context(), userID)
-	if err != nil {
+	user, err := h.store.GetUsersByIDs(r.Context(), []uuid.UUID{userID})
+	if err != nil || len(user) == 0 {
 		http.Error(w, "User not found", http.StatusNotFound)
 		return
 	}
 
 	// Update nickname
-	user.Nickname = req.Nickname
-	if err := h.store.UpdateUser(r.Context(), user); err != nil {
+	user[0].Nickname = req.Nickname
+	if err := h.store.UpdateUser(r.Context(), user[0]); err != nil {
 		http.Error(w, "Error updating nickname", http.StatusInternalServerError)
 		return
 	}
 
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{"message": "Nickname updated successfully"})
-}
-
-func (h *UserHandler) GetUserSessions(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	userID := auth.GetUserIDFromContext(r)
-
-	// Get all sessions for the user
-	sessions, err := h.store.GetUserSessions(r.Context(), userID)
-	if err != nil {
-		http.Error(w, "Error fetching sessions", http.StatusInternalServerError)
-		return
-	}
-
-	// Build response with session IDs and roles
-	response := make([]UserSessionResponse, 0, len(sessions))
-	for _, session := range sessions {
-		role, err := h.store.GetUserSessionRole(r.Context(), userID, session.ID)
-		if err != nil {
-			http.Error(w, "Error fetching session roles", http.StatusInternalServerError)
-			return
-		}
-		response = append(response, UserSessionResponse{
-			SessionID: session.ID,
-			Role:      role,
-		})
-	}
-
-	json.NewEncoder(w).Encode(response)
 }

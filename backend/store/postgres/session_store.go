@@ -43,7 +43,7 @@ func (s *Store) CreateSession(ctx context.Context, session *models.Session) erro
 
 func (s *Store) GetSessionByID(ctx context.Context, id uuid.UUID) (*models.Session, error) {
 	session := &models.Session{}
-	err := s.loader.queryRow(ctx, GetSessionByIDQuery,
+	err := s.loader.queryRow(ctx, GetSessionsByIDQuery,
 		func(row pgx.Row) error {
 			return row.Scan(&session.ID, &session.Name, &session.CreatorID,
 				&session.CreatedAt)

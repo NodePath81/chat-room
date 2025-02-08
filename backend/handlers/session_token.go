@@ -35,21 +35,18 @@ func (h *SessionHandler) GetSessionToken(w http.ResponseWriter, r *http.Request)
 	userID := auth.GetUserIDFromContext(r)
 
 	// Check if session exists and user is a member
-	_, err = h.store.GetSessionByID(r.Context(), sessionID)
+	userSessions, err := h.store.GetUserSessionsBySessionIDAndUserIDs(r.Context(), sessionID, []uuid.UUID{userID})
 	if err != nil {
 		http.Error(w, "Session not found", http.StatusNotFound)
 		return
 	}
-
-	// Get user's role in the session
-	role, err := h.store.GetUserSessionRole(r.Context(), userID, sessionID)
-	if err != nil {
-		http.Error(w, "User is not a member of this session", http.StatusForbidden)
+	if len(userSessions) == 0 {
+		http.Error(w, "Session not found", http.StatusNotFound)
 		return
 	}
 
 	// Generate session token
-	token, err := h.tokenManager.GenerateToken(sessionID, role, 24*time.Hour)
+	token, err := h.tokenManager.GenerateToken(userSessions[0].SessionID, userSessions[0].Role, 24*time.Hour)
 	if err != nil {
 		http.Error(w, "Failed to generate session token", http.StatusInternalServerError)
 		return

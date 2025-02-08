@@ -69,11 +69,16 @@ func (h *AvatarHandler) UploadAvatar(w http.ResponseWriter, r *http.Request) {
 	)
 
 	// Get current user
-	user, err := h.store.GetUserByID(r.Context(), userID)
+	users, err := h.store.GetUsersByIDs(r.Context(), []uuid.UUID{userID})
 	if err != nil {
 		http.Error(w, "Failed to get user", http.StatusInternalServerError)
 		return
 	}
+	if len(users) == 0 {
+		http.Error(w, "User not found", http.StatusNotFound)
+		return
+	}
+	user := users[0]
 
 	// Update user's avatar URL
 	user.AvatarURL = publicURL

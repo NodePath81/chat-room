@@ -27,14 +27,19 @@ type CachedSession struct {
 	Members []*CachedUser   `json:"members"`
 }
 
+// Cache keys
 const (
-	// Cache keys
-	userKey         = "user:%s"          // user:{userID}
-	sessionKey      = "session:%s"       // session:{sessionID}
-	messageKey      = "msg:%s"           // msg:{messageID}
-	userSessionsKey = "user:%s:sessions" // user:{userID}:sessions
+	userKey             = "user:%s"            // user:{userID}
+	sessionKey          = "session:%s"         // session:{sessionID}
+	messageKey          = "msg:%s"             // msg:{messageID}
+	userSessionsKey     = "user:%s:sessions"   // user:{userID}:sessions
+	sessionUsersKey     = "session:%s:users"   // session:{sessionID}:users
+	userSessionKey      = "user_session:%s:%s" // user_session:{sessionID}:{userID}
+	userSessionBatchKey = "user_sessions:%s"   // user_sessions:{sessionID} - for batch operations
+)
 
-	// Cache expiration times
+// Cache expiration times
+const (
 	userExpiration        = 30 * time.Minute
 	sessionExpiration     = 15 * time.Minute
 	messageExpiration     = 1 * time.Hour
@@ -126,8 +131,8 @@ func (s *RedisStore) CreateSession(ctx context.Context, session *models.Session)
 	return s.cacheSession(ctx, session)
 }
 
-func (s *RedisStore) GetSessionsByIDs(ctx context.Context, ids []uuid.UUID) ([]*models.Session, error) {
-	return s.store.GetSessionsByIDs(ctx, ids)
+func (s *RedisStore) GetSessionByID(ctx context.Context, id uuid.UUID) (*models.Session, error) {
+	return s.store.GetSessionByID(ctx, id)
 }
 
 func (s *RedisStore) UpdateSession(ctx context.Context, session *models.Session) error {
@@ -170,9 +175,14 @@ func (s *RedisStore) AddUserToSession(ctx context.Context, userID, sessionID uui
 	if err := s.store.AddUserToSession(ctx, userID, sessionID, role); err != nil {
 		return err
 	}
+
+	// Invalidate affected caches
 	s.invalidateCache(ctx,
 		fmt.Sprintf(sessionKey, sessionID),
 		fmt.Sprintf(userSessionsKey, userID),
+		fmt.Sprintf(sessionUsersKey, sessionID),
+		fmt.Sprintf(userSessionKey, sessionID, userID),
+		fmt.Sprintf(userSessionBatchKey, sessionID),
 	)
 	return nil
 }
@@ -181,19 +191,116 @@ func (s *RedisStore) RemoveUserFromSession(ctx context.Context, userID, sessionI
 	if err := s.store.RemoveUserFromSession(ctx, userID, sessionID); err != nil {
 		return err
 	}
+
+	// Invalidate affected caches
 	s.invalidateCache(ctx,
 		fmt.Sprintf(sessionKey, sessionID),
 		fmt.Sprintf(userSessionsKey, userID),
+		fmt.Sprintf(sessionUsersKey, sessionID),
+		fmt.Sprintf(userSessionKey, sessionID, userID),
+		fmt.Sprintf(userSessionBatchKey, sessionID),
 	)
 	return nil
 }
 
 func (s *RedisStore) GetSessionIDsByUserID(ctx context.Context, userID uuid.UUID) ([]uuid.UUID, error) {
-	return s.store.GetSessionIDsByUserID(ctx, userID)
+	key := fmt.Sprintf(userSessionsKey, userID)
+	var sessionIDs []uuid.UUID
+
+	// Try to get from cache
+	err := s.getFromCache(ctx, key, &sessionIDs)
+	if err == nil {
+		return sessionIDs, nil
+	}
+
+	// Get from store
+	sessionIDs, err = s.store.GetSessionIDsByUserID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Cache the result
+	if err := s.setCache(ctx, key, sessionIDs, userSessionExpiration); err != nil {
+		// Log error but don't fail the request
+		s.logCacheError("Failed to cache session IDs for user", userID, err)
+	}
+
+	return sessionIDs, nil
 }
 
 func (s *RedisStore) GetUserIDsBySessionID(ctx context.Context, sessionID uuid.UUID) ([]uuid.UUID, error) {
-	return s.store.GetUserIDsBySessionID(ctx, sessionID)
+	key := fmt.Sprintf(sessionUsersKey, sessionID)
+	var userIDs []uuid.UUID
+
+	// Try to get from cache
+	err := s.getFromCache(ctx, key, &userIDs)
+	if err == nil {
+		return userIDs, nil
+	}
+
+	// Get from store
+	userIDs, err = s.store.GetUserIDsBySessionID(ctx, sessionID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Cache the result
+	if err := s.setCache(ctx, key, userIDs, userSessionExpiration); err != nil {
+		// Log error but don't fail the request
+		s.logCacheError("Failed to cache user IDs for session", sessionID, err)
+	}
+
+	return userIDs, nil
+}
+
+func (s *RedisStore) GetUserSessionsBySessionIDAndUserIDs(ctx context.Context, sessionID uuid.UUID, userIDs []uuid.UUID) ([]*models.UserSession, error) {
+	batchKey := fmt.Sprintf(userSessionBatchKey, sessionID)
+	var userSessions []*models.UserSession
+
+	// Try to get from batch cache first
+	err := s.getFromCache(ctx, batchKey, &userSessions)
+	if err == nil {
+		// Filter cached results by requested userIDs
+		filtered := make([]*models.UserSession, 0)
+		userIDMap := make(map[uuid.UUID]bool)
+		for _, id := range userIDs {
+			userIDMap[id] = true
+		}
+		for _, us := range userSessions {
+			if userIDMap[us.UserID] {
+				filtered = append(filtered, us)
+			}
+		}
+		if len(filtered) == len(userIDs) {
+			return filtered, nil
+		}
+	}
+
+	// Get from store
+	userSessions, err = s.store.GetUserSessionsBySessionIDAndUserIDs(ctx, sessionID, userIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	// Cache individual user sessions
+	for _, us := range userSessions {
+		key := fmt.Sprintf(userSessionKey, us.SessionID, us.UserID)
+		if err := s.setCache(ctx, key, us, userSessionExpiration); err != nil {
+			s.logCacheError("Failed to cache user session", us.UserID, err)
+		}
+	}
+
+	// Cache the batch result
+	if err := s.setCache(ctx, batchKey, userSessions, userSessionExpiration); err != nil {
+		s.logCacheError("Failed to cache batch user sessions for session", sessionID, err)
+	}
+
+	return userSessions, nil
+}
+
+// Helper function for consistent cache error logging
+func (s *RedisStore) logCacheError(message string, id interface{}, err error) {
+	fmt.Printf("%s %v: %v\n", message, id, err)
 }
 
 // Pass-through methods

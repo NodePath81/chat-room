@@ -2,7 +2,7 @@
 INSERT INTO sessions (id, name, creator_id, created_at)
 VALUES ($1, $2, $3, $4);
 
--- name: GetSessionByID :one
+-- name: GetSessionsByID :one
 SELECT id, name, creator_id, created_at
 FROM sessions
 WHERE id = $1;
@@ -55,4 +55,9 @@ WHERE session_id = $1;
 -- name: GetSessionsByIDs :many
 SELECT id, name, creator_id, created_at
 FROM sessions
-WHERE id = ANY($1); 
+WHERE id = ANY($1);
+
+-- name: GetUserSessionsBySessionIDAndUserIDs :many
+SELECT user_id, session_id, role, joined_at
+FROM user_sessions
+WHERE session_id = $1 AND user_id = ANY($2); 

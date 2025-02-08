@@ -17,6 +17,7 @@ var queries embed.FS
 //go:embed migrations/*.sql
 var migrations embed.FS
 
+// Store implements the store.Store interface
 type Store struct {
 	db        *pgxpool.Pool
 	querier   *queryStore
@@ -24,12 +25,22 @@ type Store struct {
 	migration *migrationManager
 }
 
+// Ensure Store implements all required interfaces
+var (
+	_ store.Store            = (*Store)(nil)
+	_ store.UserStore        = (*Store)(nil)
+	_ store.SessionStore     = (*Store)(nil)
+	_ store.UserSessionStore = (*Store)(nil)
+	_ store.MessageStore     = (*Store)(nil)
+)
+
 type Tx struct {
 	*Store
 	tx     pgx.Tx
 	loader *queryLoader
 }
 
+// New creates a new Store instance
 func New(ctx context.Context, connString string) (*Store, error) {
 	config, err := pgxpool.ParseConfig(connString)
 	if err != nil {
@@ -56,6 +67,7 @@ func New(ctx context.Context, connString string) (*Store, error) {
 	return s, nil
 }
 
+// Close closes the database connection
 func (s *Store) Close() {
 	s.db.Close()
 }

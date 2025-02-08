@@ -124,3 +124,29 @@ func (s *Store) GetUserIDsBySessionID(ctx context.Context, sessionID uuid.UUID) 
 	}
 	return userIDs, nil
 }
+
+func (s *Store) GetUserSessionsBySessionIDAndUserIDs(ctx context.Context, sessionID uuid.UUID, userIDs []uuid.UUID) ([]*models.UserSession, error) {
+	var userSessions []*models.UserSession
+	err := s.loader.queryRows(ctx, GetUserSessionsBySessionIDAndUserIDsQuery,
+		func(rows pgx.Rows) error {
+			for rows.Next() {
+				userSession := &models.UserSession{}
+				err := rows.Scan(
+					&userSession.UserID,
+					&userSession.SessionID,
+					&userSession.Role,
+					&userSession.JoinedAt,
+				)
+				if err != nil {
+					return err
+				}
+				userSessions = append(userSessions, userSession)
+			}
+			return nil
+		},
+		sessionID, userIDs)
+	if err != nil {
+		return nil, err
+	}
+	return userSessions, nil
+}
