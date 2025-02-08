@@ -12,19 +12,24 @@
 
 ## Overview
 
-The Chat Room Application is a full-stack real-time chat platform designed to support seamless communication between users. It combines a Go-based RESTful API backend with a modern React frontend built using Tailwind CSS. The application supports text and image messages, session management, and real-time messaging via WebSockets.
+The Chat Room Application is a full-stack real-time chat platform designed to support seamless communication between users. It combines a Go-based RESTful API backend with a modern React frontend built using Tailwind CSS. The application supports text and image messages, session management, and real-time messaging via WebSockets. The system utilizes Redis for caching and local storage for frontend state management to optimize performance.
 
 ---
 
 ## Key Features
 
-- **Real-Time Messaging:** Instant communication powered by WebSockets.
-- **User Authentication:** Secure JWT-based authentication for registration and login.
-- **Chat Sessions:** Create, join, and manage dedicated chat sessions.
-- **Media Support:** Upload and display image messages using MinIO.
+- **Real-Time Messaging:** Instant communication powered by WebSockets for text messages.
+- **User Authentication:** Secure JWT-based authentication with session token management.
+- **Chat Sessions:** Create, join, and manage dedicated chat sessions with role-based access control.
+- **Media Support:** Upload and display image messages using MinIO with dedicated API endpoints.
 - **Robust API:** RESTful API endpoints for managing users, sessions, and messages.
 - **Dockerized Deployment:** Easily run the backend and frontend using Docker or Podman.
 - **Responsive UI:** Built with React and Tailwind CSS for modern, responsive design.
+- **Session Management:** Enhanced session management with header-based token authentication.
+- **Performance Optimization:**
+  - Backend Redis caching for user data, sessions, and messages
+  - Frontend local storage for session tokens and user data
+  - Efficient batch operations for message and user data retrieval
 
 ---
 
@@ -34,14 +39,19 @@ The Chat Room Application is a full-stack real-time chat platform designed to su
   - Language: Go  
   - Framework: [Chi](https://github.com/go-chi/chi)  
   - Data Storage: PostgreSQL  
+  - Cache Layer: Redis
   - File Storage: MinIO (for image uploads)  
-  - Authentication: JWT tokens  
-  - Key Directories: `backend/handlers`, `backend/middleware`, `backend/models`, `backend/store`
+  - Authentication: JWT tokens with header-based session tokens
+  - Key Directories: `backend/handlers`, `backend/middleware`, `backend/models`, `backend/store`, `backend/store/cache`
 
 - **Frontend:**  
   - Language: JavaScript (React)  
   - Styling: Tailwind CSS  
   - Routing: React Router  
+  - State Management: 
+    - Local storage for session tokens
+    - In-memory cache for user data
+    - Optimized message handling
   - Key Directories: `frontend/src/pages`, `frontend/src/components`, `frontend/src/services`
 
 - **Docker:**  
@@ -83,6 +93,9 @@ The Chat Room Application is a full-stack real-time chat platform designed to su
      - `MINIO_ACCESS_KEY`
      - `MINIO_SECRET_KEY`
      - `MINIO_BUCKET_NAME`
+     - `REDIS_HOST`
+     - `REDIS_PORT`
+     - `REDIS_PASSWORD`
 
 3. **Build and Run:**
    ```bash
@@ -141,6 +154,9 @@ The backend requires the following environment variables:
 - `MINIO_ACCESS_KEY`: Access key for MinIO
 - `MINIO_SECRET_KEY`: Secret key for MinIO
 - `MINIO_BUCKET_NAME`: Name of the bucket for file uploads
+- `REDIS_HOST`: Redis server host address
+- `REDIS_PORT`: Redis server port (e.g., 6379)
+- `REDIS_PASSWORD`: Redis server password (if any)
 
 ### Frontend
 
@@ -159,19 +175,17 @@ The backend exposes a variety of RESTful endpoints, including:
   - `POST /api/auth/login` – Login a user and return a JWT token.
 
 - **Sessions:**
-  - `GET /api/sessions` – List available chat sessions.
-  - `POST /api/sessions` – Create a new chat session.
-  - `GET /api/sessions/:sessionId/join` – Join a chat session.
-  - `GET /api/sessions/:sessionId/manage` – Manage a chat session (creator actions).
+  - `GET /api/sessions/ids` – Get all session IDs for the current user.
+  - `POST /api/sessions` – Create a new session.
+  - `GET /api/sessions/session` – Get session details.
+  - `GET /api/sessions/role` – Check user's role in a session.
+  - `POST /api/sessions/messages/upload` – Upload an image message.
+  - `GET /api/sessions/wstoken` – Get WebSocket token for real-time messaging.
 
-- **Users:**
-  - `GET /api/users/:id` – Retrieve user details.
-  - `GET /api/users/sessions` – Get sessions associated with a user.
-  - `PUT /api/users/:id/nickname` – Update a user's nickname.
-  - `PUT /api/users/:id/username` – Update a user's username.
-
-- **WebSocket:**
-  - `GET /ws` – WebSocket endpoint for real-time messaging.
+- **Messages:**
+  - Text messages are sent via WebSocket connection.
+  - Image messages are uploaded via dedicated API endpoint.
+  - Messages are retrieved with pagination support.
 
 For complete details, refer to the [backend source code](backend/main.go) and relevant handler files.
 
