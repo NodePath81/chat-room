@@ -45,7 +45,24 @@ const makeRequest = async (url, options = {}) => {
             ...(token && { Authorization: `Bearer ${token}` }),
             ...options.headers,
         },
-        credentials: 'include', // This enables sending and receiving cookies
+        credentials: options.credentials || 'omit', // Default to not sending cookies
+    };
+
+    const response = await fetch(url, { ...defaultOptions, ...options });
+    return handleResponse(response);
+};
+
+// Utility function to make session-specific API requests
+const makeSessionRequest = async (url, sessionId, options = {}) => {
+    const sessionToken = await getSessionToken(sessionId);
+    const defaultOptions = {
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${localStorage.getItem('token')}`,
+            'Session-Token': sessionToken,
+            ...options.headers,
+        },
+        credentials: 'omit', // Don't send cookies
     };
 
     const response = await fetch(url, { ...defaultOptions, ...options });
@@ -73,6 +90,7 @@ const API_ENDPOINTS = {
             if (!isValidUUID(id)) throw new Error('Invalid user ID');
             return `${API_BASE_URL}/api/users/${id}`;
         },
+        BATCH: `${API_BASE_URL}/api/users/batch`,
         UPDATE_NICKNAME: (id) => {
             if (!isValidUUID(id)) throw new Error('Invalid user ID');
             return `${API_BASE_URL}/api/users/${id}/nickname`;
@@ -81,25 +99,25 @@ const API_ENDPOINTS = {
             if (!isValidUUID(id)) throw new Error('Invalid user ID');
             return `${API_BASE_URL}/api/users/${id}/username`;
         },
-        GET_SESSIONS: `${API_BASE_URL}/api/users/sessions`,
     },
     SESSIONS: {
-        LIST: `${API_BASE_URL}/api/sessions`,
+        GET_IDS: `${API_BASE_URL}/api/sessions/ids`,
         CREATE: `${API_BASE_URL}/api/sessions`,
         JOIN: (token) => `${API_BASE_URL}/api/sessions/join?token=${token}`,
         GET: `${API_BASE_URL}/api/sessions/session`,
         CHECK_ROLE: `${API_BASE_URL}/api/sessions/role`,
-        LIST_MEMBERS: `${API_BASE_URL}/api/sessions/members`,
-        KICK_MEMBER: (memberId) => `${API_BASE_URL}/api/sessions/kick?memberId=${memberId}`,
-        REMOVE: `${API_BASE_URL}/api/sessions/remove`,
-        CREATE_SHARE_LINK: `${API_BASE_URL}/api/sessions/share`,
-        GET_SHARE_INFO: (token) => `${API_BASE_URL}/api/sessions/share/info?token=${token}`,
-        GET_MESSAGES: (params) => {
-            const url = new URL(`${API_BASE_URL}/api/sessions/messages`);
+        GET_USERS_IDS: `${API_BASE_URL}/api/sessions/users/ids`,
+        GET_MESSAGES_IDS: (params) => {
+            const url = new URL(`${API_BASE_URL}/api/sessions/messages/ids`);
             if (params?.before) url.searchParams.set('before', params.before);
             if (params?.limit) url.searchParams.set('limit', params.limit);
             return url.toString();
         },
+        FETCH_MESSAGES: `${API_BASE_URL}/api/sessions/messages/batch`,
+        KICK_MEMBER: (memberId) => `${API_BASE_URL}/api/sessions/kick?memberId=${memberId}`,
+        REMOVE: `${API_BASE_URL}/api/sessions`,
+        CREATE_SHARE_LINK: `${API_BASE_URL}/api/sessions/share`,
+        GET_SHARE_INFO: (token) => `${API_BASE_URL}/api/sessions/share/info?token=${token}`,
         UPLOAD_MESSAGE_IMAGE: `${API_BASE_URL}/api/sessions/messages/upload`,
         GET_TOKEN: `${API_BASE_URL}/api/sessions/token`,
         REFRESH_TOKEN: `${API_BASE_URL}/api/sessions/token/refresh`,
@@ -111,41 +129,47 @@ const API_ENDPOINTS = {
         UPLOAD: `${API_BASE_URL}/api/avatar`,
     },
     WEBSOCKET: {
-        CONNECT: (sessionId, wsToken) => {
-            validateSessionId(sessionId);
-            return `ws://localhost:8080/ws?token=${wsToken}`;
-        },
+        CONNECT: (wsToken) => `ws://localhost:8080/ws?token=${wsToken}`,
     },
 };
 
 // Session token management
 const getSessionToken = async (sessionId) => {
-    // First try to get token from cookie
-    // The cookie would be named session_token_{sessionId}
-    const cookies = document.cookie.split(';');
-    const tokenCookie = cookies.find(cookie => 
-        cookie.trim().startsWith(`session_token_${sessionId}=`)
-    );
+    // Try to get token from localStorage
+    const storageKey = `session_token_${sessionId}`;
+    const storedData = localStorage.getItem(storageKey);
     
-    if (tokenCookie) {
-        // If we have a cookie with the token, verify it's still valid
-        const token = tokenCookie.split('=')[1].trim();
-        if (token) {
-            try {
-                // Try to make a request with the existing token
-                await makeRequest(API_ENDPOINTS.SESSIONS.CHECK_ROLE);
-                return token;
-            } catch (error) {
-                // If the token is expired or invalid, remove the cookie
-                document.cookie = `session_token_${sessionId}=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT`;
-                console.debug('Session token expired or invalid, requesting new token');
+    if (storedData) {
+        try {
+            // Parse the stored data
+            const tokenData = JSON.parse(storedData);
+            
+            // Check if token exists and not expired
+            if (tokenData.token && tokenData.expires_at) {
+                const expiresAt = new Date(tokenData.expires_at);
+                // Add 5 seconds buffer to prevent edge cases
+                if (expiresAt > new Date(Date.now() + 5000)) {
+                    return tokenData.token;
+                }
             }
+        } catch (error) {
+            console.debug('Invalid stored data format, requesting new token');
         }
+        // Remove expired or invalid token
+        localStorage.removeItem(storageKey);
     }
 
-    // If no valid token in cookie or token expired, request a new one
+    // Request new token
     console.debug('Requesting new session token');
     const response = await makeRequest(API_ENDPOINTS.SESSIONS.GET_TOKEN + `?session_id=${sessionId}`);
+    
+    // Store the complete token data
+    localStorage.setItem(storageKey, JSON.stringify({
+        session_id: response.session_id,
+        token: response.token,
+        expires_at: response.expires_at
+    }));
+
     return response.token;
 };
 
@@ -165,6 +189,10 @@ export const api = {
     },
     users: {
         get: (id) => makeRequest(API_ENDPOINTS.USERS.GET(id)),
+        batchGet: (ids) => makeRequest(API_ENDPOINTS.USERS.BATCH, {
+            method: 'POST',
+            body: JSON.stringify({ ids }),
+        }),
         updateNickname: (id, nickname) => makeRequest(API_ENDPOINTS.USERS.UPDATE_NICKNAME(id), {
             method: 'PUT',
             body: JSON.stringify({ nickname }),
@@ -173,80 +201,51 @@ export const api = {
             method: 'PUT',
             body: JSON.stringify({ username }),
         }),
-        getSessions: () => makeRequest(API_ENDPOINTS.USERS.GET_SESSIONS),
     },
     sessions: {
         // Public routes (require only auth token)
-        list: () => makeRequest(API_ENDPOINTS.SESSIONS.LIST),
+        getSessionIDs: () => makeRequest(API_ENDPOINTS.SESSIONS.GET_IDS),
         create: (data) => makeRequest(API_ENDPOINTS.SESSIONS.CREATE, {
             method: 'POST',
             body: JSON.stringify(data),
         }),
-        join: (token) => makeRequest(API_ENDPOINTS.SESSIONS.JOIN(token)),
+        join: (token) => makeRequest(API_ENDPOINTS.SESSIONS.JOIN(token), {
+            method: 'POST'
+        }),
         getShareInfo: (token) => makeRequest(API_ENDPOINTS.SESSIONS.GET_SHARE_INFO(token)),
         getToken: (sessionId) => makeRequest(API_ENDPOINTS.SESSIONS.GET_TOKEN + `?session_id=${sessionId}`),
-        createShareLink: (data) => makeRequest(API_ENDPOINTS.SESSIONS.CREATE_SHARE_LINK, {
+
+        // Protected routes (require session token)
+        get: (sessionId) => makeSessionRequest(API_ENDPOINTS.SESSIONS.GET, sessionId),
+        checkRole: (sessionId) => makeSessionRequest(API_ENDPOINTS.SESSIONS.CHECK_ROLE, sessionId),
+        getUserIDs: (sessionId) => makeSessionRequest(API_ENDPOINTS.SESSIONS.GET_USERS_IDS, sessionId),
+        getMessageIDs: (sessionId, params) => makeSessionRequest(API_ENDPOINTS.SESSIONS.GET_MESSAGES_IDS(params), sessionId),
+        fetchMessages: (sessionId, messageIDs) => makeSessionRequest(API_ENDPOINTS.SESSIONS.FETCH_MESSAGES, sessionId, {
+            method: 'POST',
+            body: JSON.stringify({ ids: messageIDs }),
+        }),
+        kickMember: (sessionId, memberId) => makeSessionRequest(API_ENDPOINTS.SESSIONS.KICK_MEMBER(memberId), sessionId, {
+            method: 'POST'
+        }),
+        remove: (sessionId) => makeSessionRequest(API_ENDPOINTS.SESSIONS.REMOVE, sessionId, {
+            method: 'DELETE'
+        }),
+        uploadMessageImage: (sessionId, formData) => makeSessionRequest(API_ENDPOINTS.SESSIONS.UPLOAD_MESSAGE_IMAGE, sessionId, {
+            method: 'POST',
+            body: formData,
+        }),
+        refreshToken: (sessionId) => makeSessionRequest(API_ENDPOINTS.SESSIONS.REFRESH_TOKEN, sessionId),
+        revokeToken: (sessionId) => makeSessionRequest(API_ENDPOINTS.SESSIONS.REVOKE_TOKEN, sessionId, {
+            method: 'DELETE'
+        }),
+        getWsToken: (sessionId) => makeSessionRequest(API_ENDPOINTS.SESSIONS.GET_WS_TOKEN, sessionId),
+        leave: (sessionId) => makeSessionRequest(API_ENDPOINTS.SESSIONS.LEAVE, sessionId, {
+            method: 'POST'
+        }),
+        createShareLink: (sessionId, data) => makeSessionRequest(API_ENDPOINTS.SESSIONS.CREATE_SHARE_LINK, sessionId, {
             method: 'POST',
             body: JSON.stringify(data),
         }),
-
-        // Protected routes (require session token)
-        // These methods will automatically get a session token if needed
-        async get(sessionId) {
-            await getSessionToken(sessionId);
-            return makeRequest(API_ENDPOINTS.SESSIONS.GET);
-        },
-        async checkRole(sessionId) {
-            await getSessionToken(sessionId);
-            return makeRequest(API_ENDPOINTS.SESSIONS.CHECK_ROLE);
-        },
-        async listMembers(sessionId) {
-            await getSessionToken(sessionId);
-            return makeRequest(API_ENDPOINTS.SESSIONS.LIST_MEMBERS);
-        },
-        async kickMember(sessionId, memberId) {
-            await getSessionToken(sessionId);
-            return makeRequest(API_ENDPOINTS.SESSIONS.KICK_MEMBER(memberId));
-        },
-        async remove(sessionId) {
-            await getSessionToken(sessionId);
-            await makeRequest(API_ENDPOINTS.SESSIONS.REMOVE);
-            // Remove the session cookie after successful removal
-            document.cookie = `session_token_${sessionId}=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT`;
-            return true;
-        },
-        async getMessages(sessionId, params) {
-            await getSessionToken(sessionId);
-            return makeRequest(API_ENDPOINTS.SESSIONS.GET_MESSAGES(params));
-        },
-        async uploadMessageImage(sessionId, formData) {
-            await getSessionToken(sessionId);
-            return makeRequest(API_ENDPOINTS.SESSIONS.UPLOAD_MESSAGE_IMAGE, {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${authService.getToken()}`
-                },
-                body: formData,
-            });
-        },
-        async refreshToken(sessionId) {
-            await getSessionToken(sessionId);
-            return makeRequest(API_ENDPOINTS.SESSIONS.REFRESH_TOKEN);
-        },
-        async revokeToken(sessionId) {
-            await getSessionToken(sessionId);
-            return makeRequest(API_ENDPOINTS.SESSIONS.REVOKE_TOKEN, {
-                method: 'DELETE'
-            });
-        },
-        async getWsToken(sessionId) {
-            await getSessionToken(sessionId);
-            return makeRequest(API_ENDPOINTS.SESSIONS.GET_WS_TOKEN);
-        },
-        async leave(sessionId) {
-            await getSessionToken(sessionId);
-            return makeRequest(API_ENDPOINTS.SESSIONS.LEAVE);
-        },
     },
     avatar: {
         upload: (formData) => makeRequest(API_ENDPOINTS.AVATAR.UPLOAD, {

@@ -38,25 +38,28 @@ function MessageBubble({ message, user }) {
         return nickname ? nickname.charAt(0).toUpperCase() : '?';
     };
 
+    // Ensure we have the correct user data structure
+    const userData = user || { nickname: 'Unknown User', avatar_url: null };
+
     return (
         <div className="flex items-start space-x-2 mb-4">
             <div className="flex-shrink-0 w-8 h-8">
-                {user?.avatar_url ? (
+                {userData.avatar_url ? (
                     <img
-                        src={user.avatar_url}
-                        alt={user?.nickname || 'User avatar'}
+                        src={userData.avatar_url}
+                        alt={userData.nickname}
                         className="w-8 h-8 rounded-full object-cover"
                     />
                 ) : (
                     <div className="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center text-white font-medium">
-                        {getInitial(user?.nickname)}
+                        {getInitial(userData.nickname)}
                     </div>
                 )}
             </div>
             <div className="flex-1">
                 <div className="flex items-baseline space-x-2">
                     <span className="font-medium text-gray-900">
-                        {user?.nickname || 'Unknown User'}
+                        {userData.nickname}
                     </span>
                     <span className="text-xs text-gray-500">{timestamp}</span>
                 </div>

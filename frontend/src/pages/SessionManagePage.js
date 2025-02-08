@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
-import { api, API_ENDPOINTS } from '../services/api';
-import { authService } from '../services/auth';
+import sessionService from '../services/session';
+import { userService } from '../services/user';
 
 const SessionManagePage = () => {
     const { sessionId } = useParams();
@@ -29,35 +28,24 @@ const SessionManagePage = () => {
             setLoading(true);
             setError('');
 
-            // Get session token first
-            const tokenResponse = await api.sessions.getToken(sessionId);
-            if (!tokenResponse || !tokenResponse.token) {
-                throw new Error('Failed to get session token');
-            }
-
-            // Check role first
-            const roleData = await api.sessions.checkRole(sessionId);
-            if (!roleData || !roleData.role) {
-                throw new Error('Unable to verify session role');
-            }
-            setRole(roleData.role);
-
-            // Fetch session details
-            const sessionData = await api.sessions.get(sessionId);
-            if (!sessionData) {
-                throw new Error('Session not found');
-            }
-            setSession(sessionData);
+            // Initialize session and get details
+            const sessionData = await sessionService.initializeSession(sessionId);
+            setSession(sessionData.session);
+            setRole(sessionData.role);
 
             // Fetch members
-            const membersData = await api.sessions.listMembers(sessionId);
-            if (membersData && membersData.members) {
-                setMembers(membersData.members);
-                // Fetch details for each member
-                membersData.members.forEach(memberId => {
-                    fetchMemberDetails(memberId);
-                });
-            }
+            const memberIds = await sessionService.getSessionMembers(sessionId);
+            setMembers(memberIds);
+
+            // Fetch member details
+            const users = await userService.getBatchUsers(memberIds);
+            const userDetailsMap = {};
+            users.forEach(user => {
+                if (user && user.id) {
+                    userDetailsMap[user.id] = user;
+                }
+            });
+            setMemberDetails(userDetailsMap);
 
         } catch (err) {
             console.error('Error fetching session data:', err);
@@ -73,7 +61,7 @@ const SessionManagePage = () => {
     const handleCreateShareLink = async () => {
         try {
             setError('');
-            const data = await api.sessions.createShareLink({ durationDays: duration });
+            const data = await sessionService.createShareLink(sessionId, duration);
             if (!data || !data.token) {
                 throw new Error('Failed to generate share link');
             }
@@ -88,12 +76,20 @@ const SessionManagePage = () => {
     const handleKickMember = async (memberId) => {
         try {
             setError('');
-            await api.sessions.kickMember(sessionId, memberId);
+            await sessionService.kickMember(sessionId, memberId);
             // Refresh members list
-            const membersData = await api.sessions.listMembers(sessionId);
-            if (membersData && membersData.members) {
-                setMembers(membersData.members);
-            }
+            const memberIds = await sessionService.getSessionMembers(sessionId);
+            setMembers(memberIds);
+            
+            // Update member details
+            const users = await userService.getBatchUsers(memberIds);
+            const userDetailsMap = {};
+            users.forEach(user => {
+                if (user && user.id) {
+                    userDetailsMap[user.id] = user;
+                }
+            });
+            setMemberDetails(userDetailsMap);
         } catch (err) {
             console.error('Error kicking member:', err);
             setError(err.message || 'Failed to kick member');
@@ -107,7 +103,7 @@ const SessionManagePage = () => {
 
         try {
             setError('');
-            await api.sessions.remove(sessionId);
+            await sessionService.removeSession(sessionId);
             navigate('/');
         } catch (err) {
             console.error('Error removing session:', err);
@@ -122,25 +118,11 @@ const SessionManagePage = () => {
 
         try {
             setError('');
-            await api.sessions.leave(sessionId);
+            await sessionService.leaveSession(sessionId);
             navigate('/');
         } catch (err) {
             console.error('Error leaving session:', err);
             setError(err.message || 'Failed to leave session');
-        }
-    };
-
-    const fetchMemberDetails = async (memberId) => {
-        try {
-            const userData = await api.users.get(memberId);
-            if (userData) {
-                setMemberDetails(prev => ({
-                    ...prev,
-                    [memberId]: userData
-                }));
-            }
-        } catch (error) {
-            console.error('Error fetching member details:', error);
         }
     };
 

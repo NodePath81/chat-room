@@ -3,7 +3,6 @@ package middleware
 import (
 	"context"
 	"net/http"
-	"strings"
 
 	"chat-room/token"
 
@@ -23,25 +22,8 @@ type SessionClaims struct {
 func NewSessionAuth(tokenManager *token.TokenManager) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Get all cookies
-			cookies := r.Cookies()
-			var sessionToken string
-			var sessionID uuid.UUID
-
-			// Look for session token cookie
-			for _, cookie := range cookies {
-				if strings.HasPrefix(cookie.Name, "session_token_") {
-					sessionToken = cookie.Value
-					// Extract session ID from cookie name
-					idStr := strings.TrimPrefix(cookie.Name, "session_token_")
-					id, err := uuid.Parse(idStr)
-					if err == nil {
-						sessionID = id
-						break
-					}
-				}
-			}
-
+			// Get session token from header
+			sessionToken := r.Header.Get("Session-Token")
 			if sessionToken == "" {
 				http.Error(w, "Session token is required", http.StatusUnauthorized)
 				return
@@ -61,19 +43,13 @@ func NewSessionAuth(tokenManager *token.TokenManager) func(http.Handler) http.Ha
 				return
 			}
 
-			// Verify that the session ID from the cookie matches the one in the token
-			if sessionID != claims.GroupID {
-				http.Error(w, "Invalid session token", http.StatusUnauthorized)
-				return
-			}
-
 			// Store claims and session ID in context
 			sessionClaims := &SessionClaims{
 				GroupID: claims.GroupID,
 				Role:    claims.Role,
 			}
 			ctx := context.WithValue(r.Context(), sessionAuthKey{}, sessionClaims)
-			ctx = context.WithValue(ctx, sessionIDKey{}, sessionID)
+			ctx = context.WithValue(ctx, sessionIDKey{}, claims.GroupID)
 
 			// Call next handler with updated context
 			next.ServeHTTP(w, r.WithContext(ctx))

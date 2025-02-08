@@ -3,9 +3,9 @@ import { useNavigate, useParams } from 'react-router-dom';
 import TopBar from '../components/chat/TopBar';
 import ChatBoard from '../components/chat/ChatBoard';
 import SendBar from '../components/chat/SendBar';
-import { api } from '../services/api';
-import { chatService } from '../services/chat';
-import SessionService from '../services/session';
+import sessionService from '../services/session';
+import { websocketService } from '../services/websocket';
+import { userService } from '../services/user';
 
 function ChatRoom() {
     const navigate = useNavigate();
@@ -25,56 +25,39 @@ function ChatRoom() {
     const initializeChat = useCallback(async () => {
         setIsLoading(true);
         try {
-            // Get session token first
-            const tokenResponse = await api.sessions.getToken(currentSessionId);
-            if (!tokenResponse || !tokenResponse.token) {
-                console.error('Failed to get session token');
-                navigate('/');
-                return;
-            }
+            // Initialize session and get details
+            const sessionData = await sessionService.initializeSession(currentSessionId);
+            setIsCreator(sessionData.isCreator);
+            setSessionName(sessionData.session.name);
 
-            // Check user role and session details
-            const roleResponse = await api.sessions.checkRole(currentSessionId);
-            if (!roleResponse || !roleResponse.role) {
-                console.error('Failed to get user role');
-                navigate('/');
-                return;
-            }
-            
-            setIsCreator(roleResponse.role === 'creator');
-            
-            // Get session details
-            const sessionDetails = await api.sessions.get(currentSessionId);
-            if (!sessionDetails) {
-                console.error('Failed to get session details');
-                navigate('/');
-                return;
-            }
-
-            setSessionName(sessionDetails.name);
-            console.log('Session details loaded:', sessionDetails);
-            
             // Connect WebSocket
-            try {
-                await chatService.connectToSession(currentSessionId);
-                console.log('WebSocket connection initiated');
+            await websocketService.connect(currentSessionId);
 
-                // Load initial messages
-                const timestamp = new Date().toISOString();
-                await loadMessages(timestamp);
-                console.log('Initial messages loaded');
-                
-                chatService.onMessageReceived((message) => {
-                    console.log('Received message:', message);
-                    setMessages(prev => [...prev, message]);
-                    if (message.user_id) {
-                        fetchUsername(message.user_id);
+            // Load initial messages
+            const timestamp = new Date().toISOString();
+            await loadMessages(timestamp);
+
+            // Set up WebSocket message handler
+            websocketService.onMessage((message) => {
+                setMessages(prev => [...prev, message]);
+                if (message.user_id) {
+                    fetchMissingUsers(new Set([message.user_id]));
+                }
+            });
+
+            // Load initial users
+            const sessionUsers = await sessionService.getSessionUsers(currentSessionId);
+            if (sessionUsers && sessionUsers.length > 0) {
+                userService.updateBatchUserCache(sessionUsers);
+                const newUsers = {};
+                sessionUsers.forEach(user => {
+                    if (user && user.id) {
+                        newUsers[user.id] = user;
                     }
                 });
-            } catch (error) {
-                console.error('Error setting up WebSocket:', error);
-                // Continue loading the chat even if WebSocket fails
+                setUsers(prev => ({...prev, ...newUsers}));
             }
+
         } catch (error) {
             console.error('Error initializing chat:', error);
             navigate('/');
@@ -86,16 +69,13 @@ function ChatRoom() {
     useEffect(() => {
         initializeChat();
         return () => {
-            chatService.disconnectFromSession(currentSessionId);
+            websocketService.disconnect();
         };
     }, [currentSessionId, initializeChat]);
 
     async function loadMessages(beforeTimestamp = null) {
         try {
-            const response = await api.sessions.getMessages(currentSessionId, {
-                before: beforeTimestamp,
-                limit: 50
-            });
+            const response = await sessionService.getMessages(currentSessionId, beforeTimestamp);
             const newMessages = response.messages || [];
             
             if (newMessages.length === 0) {
@@ -103,50 +83,61 @@ function ChatRoom() {
                 return;
             }
 
-            // Sort messages by timestamp in ascending order (oldest first)
-            const sortedMessages = [...newMessages].sort((a, b) => 
-                new Date(a.timestamp) - new Date(b.timestamp)
-            );
-
             setMessages(prev => {
                 if (beforeTimestamp) {
-                    // When loading older messages, put them before existing messages
-                    return [...sortedMessages, ...prev];
+                    return [...newMessages, ...prev];
                 } else {
-                    // For initial load, just use the sorted messages
-                    return sortedMessages;
+                    return newMessages;
                 }
             });
-            setHasMore(response.has_more);
+            setHasMore(response.hasMore);
 
             // Store the oldest message's timestamp
-            if (sortedMessages.length > 0) {
-                oldestTimestampRef.current = sortedMessages[0].timestamp;
+            if (newMessages.length > 0) {
+                oldestTimestampRef.current = newMessages[0].timestamp;
             }
 
-            // Fetch usernames for all messages
-            const userIds = new Set(sortedMessages.map(msg => msg.user_id));
-            for (const userId of userIds) {
-                await fetchUsername(userId);
-            }
+            // Fetch usernames for new messages
+            const userIds = new Set(newMessages.map(msg => msg.user_id));
+            await fetchMissingUsers(userIds);
         } catch (error) {
             console.error('Error loading messages:', error);
         }
     }
 
-    async function fetchUsername(userId) {
-        if (!users[userId]) {
-            try {
-                const userData = await chatService.fetchUserData(userId);
-                setUsers(prev => ({
-                    ...prev,
-                    [userId]: userData
-                }));
-            } catch (error) {
-                console.error('Error fetching user data:', error);
+    async function fetchMissingUsers(userIds) {
+        const missingUserIds = Array.from(userIds).filter(id => !users[id]);
+        if (missingUserIds.length === 0) return;
+
+        try {
+            const fetchedUsers = await userService.getBatchUsers(missingUserIds);
+            const newUsers = {};
+            fetchedUsers.forEach(user => {
+                if (user && user.id) {
+                    newUsers[user.id] = user;
+                }
+            });
+            
+            if (Object.keys(newUsers).length > 0) {
+                setUsers(prev => ({...prev, ...newUsers}));
             }
+        } catch (error) {
+            console.error('Error fetching users:', error);
         }
     }
+
+    // Add effect to monitor users state changes
+    useEffect(() => {
+        console.debug('Users state updated:', users);
+    }, [users]);
+
+    // Add effect to monitor messages and ensure we have all user data
+    useEffect(() => {
+        if (messages.length > 0) {
+            const userIds = new Set(messages.map(msg => msg.user_id));
+            fetchMissingUsers(userIds);
+        }
+    }, [messages]);
 
     const handleLoadMore = async () => {
         if (isLoadingMore || !hasMore) return;
@@ -168,36 +159,13 @@ function ChatRoom() {
     };
 
     const handleSendMessage = async (messageData) => {
-        console.debug('ChatRoom: Handling message:', messageData);
-        
-        if (!messageData.content || !messageData.type) {
-            console.error('ChatRoom: Invalid message format:', messageData);
-            return;
-        }
-        
         try {
-            if (messageData.type === 'image') {
-                console.debug('ChatRoom: Processing image upload');
-                const formData = new FormData();
-                formData.append('image', messageData.content);
-                await api.sessions.uploadMessageImage(currentSessionId, formData);
-            } else {
-                console.debug('ChatRoom: Sending text message');
-                await chatService.sendTextMessage(messageData.content);
-            }
+            websocketService.sendMessage({
+                type: messageData.type,
+                content: messageData.content
+            });
         } catch (error) {
-            console.error('ChatRoom: Error sending message:', error);
-        }
-    };
-
-    const handleImageUpload = async (file) => {
-        try {
-            console.debug('ChatRoom: Starting image upload:', file.name);
-            const response = await chatService.uploadImage(file);
-            console.debug('ChatRoom: Image upload completed:', response);
-        } catch (error) {
-            console.error('ChatRoom: Error uploading image:', error);
-            // TODO: Show error notification to user
+            console.error('Error sending message:', error);
         }
     };
 
@@ -237,10 +205,7 @@ function ChatRoom() {
                 </div>
             </div>
             
-            <SendBar
-                onSendMessage={handleSendMessage}
-                onImageUpload={handleImageUpload}
-            />
+            <SendBar onSendMessage={handleSendMessage} />
         </div>
     );
 }

@@ -41,9 +41,9 @@ const (
 // Cache expiration times
 const (
 	userExpiration        = 30 * time.Minute
-	sessionExpiration     = 15 * time.Minute
+	sessionExpiration     = 10 * time.Second
 	messageExpiration     = 1 * time.Hour
-	userSessionExpiration = 10 * time.Minute
+	userSessionExpiration = 10 * time.Second
 )
 
 type RedisStore struct {

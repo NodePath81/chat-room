@@ -73,6 +73,7 @@ func main() {
 	userHandler := handlers.NewUserHandler(store)
 	avatarHandler := handlers.NewAvatarHandler(store)
 	messageHandler := handlers.NewMessageHandler(store, wsHandler)
+	userSessionHandler := handlers.NewUserSessionHandler(store)
 
 	// Setup router
 	r := chi.NewRouter()
@@ -83,8 +84,10 @@ func main() {
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   []string{"http://localhost:3000"},
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type"},
+		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "Session-Token"},
+		ExposedHeaders:   []string{"Session-Token"},
 		AllowCredentials: true,
+		MaxAge:           300, // Maximum value not ignored by any of major browsers
 	}))
 
 	// Routes
@@ -98,9 +101,9 @@ func main() {
 		r.Use(custommw.AuthMiddleware)
 
 		// Public session routes (require only auth)
-		r.Get("/", sessionHandler.GetSessions)
+		r.Get("/ids", userSessionHandler.GetSessionIDsByUserID)
 		r.Post("/", sessionHandler.CreateSession)
-		r.Get("/join", sessionHandler.JoinSession)
+		r.Post("/join", userSessionHandler.JoinSession)
 		r.Get("/share/info", sessionHandler.GetShareInfo)
 		r.Get("/token", sessionHandler.GetSessionToken)
 
@@ -111,18 +114,18 @@ func main() {
 			// Basic session member routes
 			r.Get("/session", sessionHandler.GetSession)
 			r.Get("/role", sessionHandler.CheckRole)
-			r.Get("/members", sessionHandler.ListMembers)
-			r.Get("/messages", sessionHandler.GetMessages)
+			r.Get("/users/ids", userSessionHandler.GetUserIDsBySessionID)
+			r.Get("/messages/ids", sessionHandler.GetMessageIDsBySessionID)
+			r.Post("/messages/batch", sessionHandler.PostFetchMessages)
 			r.Post("/messages/upload", messageHandler.UploadMessageImage)
-			r.Get("/token/refresh", sessionHandler.RefreshSessionToken)
-			r.Delete("/token", sessionHandler.RevokeSessionToken)
 			r.Get("/wstoken", sessionHandler.GetWebSocketToken)
-			r.Get("/leave", sessionHandler.LeaveSession)
+			r.Post("/leave", userSessionHandler.LeaveSession)
+
 			// Creator-only routes
 			r.Group(func(r chi.Router) {
 				r.Use(custommw.RequireRole("creator"))
-				r.Get("/kick", sessionHandler.KickMember)
-				r.Get("/remove", sessionHandler.RemoveSession)
+				r.Post("/kick", userSessionHandler.KickMember)
+				r.Delete("/", sessionHandler.RemoveSession)
 				r.Post("/share", sessionHandler.CreateShareLink)
 			})
 		})
@@ -132,7 +135,7 @@ func main() {
 	r.Group(func(r chi.Router) {
 		r.Use(custommw.AuthMiddleware)
 		r.Get("/api/users/{id}", userHandler.GetUser)
-		r.Get("/api/users/sessions", userHandler.GetUserSessions)
+		r.Post("/api/users/batch", userHandler.PostFetchUsersByIDs)
 		r.Put("/api/users/{id}/nickname", userHandler.UpdateNickname)
 		r.Put("/api/users/{id}/username", userHandler.UpdateUsername)
 	})

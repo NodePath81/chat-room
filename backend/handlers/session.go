@@ -3,7 +3,6 @@ package handlers
 
 import (
 	"encoding/json"
-	"log"
 	"net/http"
 	"strconv"
 	"time"
@@ -207,11 +206,9 @@ func (h *SessionHandler) CreateSession(w http.ResponseWriter, r *http.Request) {
 // GetSession retrieves a single session by ID
 func (h *SessionHandler) GetSession(w http.ResponseWriter, r *http.Request) {
 	sessionID := middleware.GetSessionID(r)
-	log.Println("sessionID", sessionID)
 
 	session, err := h.store.GetSessionByID(r.Context(), sessionID)
 	if err != nil {
-		log.Println("error", err)
 		http.Error(w, "Session not found", http.StatusNotFound)
 		return
 	}

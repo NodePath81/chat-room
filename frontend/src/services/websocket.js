@@ -1,4 +1,5 @@
-import { API_ENDPOINTS, api } from './api';
+import { API_ENDPOINTS } from './api';
+import sessionService from './session';
 
 class WebSocketService {
   constructor() {
@@ -8,8 +9,11 @@ class WebSocketService {
     this.connectCallback = null;
     this.disconnectCallback = null;
     this.sessionId = null;
+    this.reconnectAttempts = 0;
+    this.maxReconnectAttempts = 5;
+    this.reconnectTimeout = null;
     
-    // Bind methods to maintain context
+    // Bind methods
     this.connect = this.connect.bind(this);
     this.disconnect = this.disconnect.bind(this);
     this.sendMessage = this.sendMessage.bind(this);
@@ -17,29 +21,13 @@ class WebSocketService {
     this.onError = this.onError.bind(this);
     this.onConnect = this.onConnect.bind(this);
     this.onDisconnect = this.onDisconnect.bind(this);
-    this.getWebSocketToken = this.getWebSocketToken.bind(this);
-  }
-
-  async getWebSocketToken() {
-    console.debug('Requesting WebSocket token...');
-    try {
-      // Ensure we have a valid session token first
-      await api.sessions.getToken(this.sessionId);
-      console.debug('Session token verified');
-
-      // Request WebSocket token
-      const response = await api.sessions.getWsToken(this.sessionId);
-      console.debug('WebSocket token obtained');
-      return response.token;
-    } catch (error) {
-      console.error('Failed to obtain WebSocket token:', error);
-      throw error;
-    }
+    this.reconnect = this.reconnect.bind(this);
   }
 
   async connect(sessionId) {
     console.debug(`Initiating WebSocket connection for session ${sessionId}...`);
     this.sessionId = sessionId;
+    this.reconnectAttempts = 0;
 
     if (this.ws) {
       console.debug('Closing existing WebSocket connection');
@@ -47,15 +35,16 @@ class WebSocketService {
     }
 
     try {
-      // Get WebSocket token
-      const wsToken = await this.getWebSocketToken();
+      // Get WebSocket token using session service
+      const wsToken = await sessionService.getWebSocketToken(sessionId);
       console.debug('WebSocket token obtained, establishing connection...');
 
       // Create WebSocket connection with token
-      this.ws = new WebSocket(API_ENDPOINTS.WEBSOCKET.CONNECT(sessionId, wsToken));
+      this.ws = new WebSocket(API_ENDPOINTS.WEBSOCKET.CONNECT(wsToken));
 
       this.ws.onopen = () => {
         console.debug('WebSocket connection established successfully');
+        this.reconnectAttempts = 0;
         if (this.connectCallback) {
           this.connectCallback();
         }
@@ -63,9 +52,13 @@ class WebSocketService {
 
       this.ws.onmessage = (event) => {
         console.debug('WebSocket message received:', event.data);
-        const message = JSON.parse(event.data);
-        if (this.messageCallback) {
-          this.messageCallback(message);
+        try {
+          const message = JSON.parse(event.data);
+          if (this.messageCallback) {
+            this.messageCallback(message);
+          }
+        } catch (error) {
+          console.error('Error parsing WebSocket message:', error);
         }
       };
 
@@ -76,10 +69,14 @@ class WebSocketService {
         }
       };
 
-      this.ws.onclose = () => {
-        console.debug('WebSocket connection closed');
+      this.ws.onclose = (event) => {
+        console.debug('WebSocket connection closed:', event);
         if (this.disconnectCallback) {
-          this.disconnectCallback();
+          this.disconnectCallback(event);
+        }
+        // Attempt to reconnect if not a normal closure
+        if (event.code !== 1000) {
+          this.reconnect();
         }
       };
     } catch (error) {
@@ -87,44 +84,53 @@ class WebSocketService {
       if (this.errorCallback) {
         this.errorCallback(error);
       }
+      // Attempt to reconnect on connection failure
+      this.reconnect();
     }
   }
 
+  async reconnect() {
+    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+      console.error('Max reconnection attempts reached');
+      return;
+    }
+
+    this.reconnectAttempts++;
+    const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 30000);
+    
+    console.debug(`Attempting to reconnect in ${delay}ms (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
+    
+    clearTimeout(this.reconnectTimeout);
+    this.reconnectTimeout = setTimeout(() => {
+      if (this.sessionId) {
+        this.connect(this.sessionId);
+      }
+    }, delay);
+  }
+
   disconnect() {
+    clearTimeout(this.reconnectTimeout);
     if (this.ws) {
       console.debug('Disconnecting WebSocket...');
-      this.ws.close();
+      this.ws.close(1000, 'Normal closure');
       this.ws = null;
       this.sessionId = null;
+      this.reconnectAttempts = 0;
     }
   }
 
   sendMessage(message) {
     if (!this.ws) {
-      const error = new Error('WebSocket instance not initialized');
-      console.error(error);
-      throw error;
+      throw new Error('WebSocket instance not initialized');
     }
 
     if (this.ws.readyState !== WebSocket.OPEN) {
-      const error = new Error(`WebSocket not in OPEN state. Current state: ${this.ws.readyState}`);
-      console.error(error);
-      throw error;
-    }
-
-    if (!this.sessionId) {
-      const error = new Error('No session ID available');
-      console.error(error);
-      throw error;
+      throw new Error(`WebSocket not in OPEN state. Current state: ${this.ws.readyState}`);
     }
 
     try {
-      
-      console.debug('Preparing to send message:', message);
-      const messageStr = JSON.stringify(message);
-      console.debug('Serialized message:', messageStr);
-      
-      this.ws.send(messageStr);
+      console.debug('Sending message:', message);
+      this.ws.send(JSON.stringify(message));
       console.debug('Message sent successfully');
     } catch (error) {
       console.error('Failed to send message:', error);
@@ -132,6 +138,7 @@ class WebSocketService {
     }
   }
 
+  // Event handlers
   onMessage(callback) {
     this.messageCallback = callback;
   }
@@ -149,5 +156,4 @@ class WebSocketService {
   }
 }
 
-// Export singleton instance
 export const websocketService = new WebSocketService(); 
